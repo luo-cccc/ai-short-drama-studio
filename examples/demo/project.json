@@ -1,0 +1,573 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "id": "PRJ-COURTYARD",
+    "revision": 1,
+    "title": "院门线索",
+    "aspect_ratio": "9:16",
+    "style": "写实悬疑短剧，青灰木院门与灰蓝服饰，柔和入口天光。"
+  },
+  "characters": [
+    {
+      "id": "CHAR-WANQING",
+      "revision": 1,
+      "name": "晚晴",
+      "description": "年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，身形清瘦，灰蓝长衫，黑布鞋。",
+      "voice": "清亮女中音，匀速，句尾短收。"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "SCENE-GATE",
+      "revision": 1,
+      "name": "旧院门",
+      "description": "前景青灰石阶通向木院门，中景门闩位于入口右侧门扇，背景院墙合拢，远景屋檐露在墙顶。"
+    }
+  ],
+  "props": [
+    {
+      "id": "PROP-KEY",
+      "revision": 1,
+      "name": "铜钥匙",
+      "description": "扁平铜钥匙，环形匙柄，齿口缺一角，表面散布细小暗斑。"
+    }
+  ],
+  "beats": [
+    {
+      "id": "BEAT-LOCK",
+      "revision": 1,
+      "scene_id": "SCENE-GATE",
+      "summary": "晚晴发现院门换了新锁，抬手查看门闩。",
+      "character_ids": [
+        "CHAR-WANQING"
+      ],
+      "prop_ids": []
+    },
+    {
+      "id": "BEAT-KEY",
+      "revision": 1,
+      "scene_id": "SCENE-GATE",
+      "summary": "晚晴从门框缝隙取回铜钥匙，确认旧线索仍在。",
+      "character_ids": [
+        "CHAR-WANQING"
+      ],
+      "prop_ids": [
+        "PROP-KEY"
+      ]
+    }
+  ],
+  "dialogues": [
+    {
+      "id": "LINE-LOCK",
+      "revision": 1,
+      "beat_id": "BEAT-LOCK",
+      "speaker_id": "CHAR-WANQING",
+      "kind": "dialogue",
+      "text": "门锁换过了。"
+    },
+    {
+      "id": "LINE-KEY",
+      "revision": 1,
+      "beat_id": "BEAT-KEY",
+      "speaker_id": "CHAR-WANQING",
+      "kind": "dialogue",
+      "text": "钥匙还在这里。"
+    }
+  ],
+  "shots": [
+    {
+      "id": "SHOT-001",
+      "revision": 1,
+      "title": "查看门闩",
+      "scene_ids": [
+        "SCENE-GATE"
+      ],
+      "character_ids": [
+        "CHAR-WANQING"
+      ],
+      "prop_ids": [],
+      "beat_ids": [
+        "BEAT-LOCK"
+      ],
+      "duration": 5.0,
+      "segments": [
+        {
+          "index": 1,
+          "start": 0.0,
+          "end": 5.0,
+          "description": "晚晴发现院门换了新锁，抬手查看门闩。",
+          "lines": [
+            {
+              "dialogue_id": "LINE-LOCK",
+              "text": "门锁换过了。"
+            }
+          ]
+        }
+      ],
+      "static_prompt_ids": [
+        "PROMPT-SPACE-GATE",
+        "PROMPT-BOARD-001"
+      ],
+      "dynamic_prompt_id": "PROMPT-VIDEO-001",
+      "design": [
+        {
+          "role": "director",
+          "knowledge": "用动作揭示线索，保留发现与确认的先后关系。",
+          "decision": "把当前节拍的发现完整呈现在一个镜头中。"
+        },
+        {
+          "role": "camera",
+          "knowledge": "中近景兼顾人物表情与手中线索。",
+          "decision": "平视中近景，镜头随手部轻移，落在关键物上。"
+        },
+        {
+          "role": "lighting",
+          "knowledge": "光线变化不能替代可见叙事。",
+          "decision": "入口柔光照亮面部与门闩，辅光维持暗部可读。"
+        },
+        {
+          "role": "action",
+          "knowledge": "手部接触物体前交代路径。",
+          "decision": "先看向门闩，再把手移至目标附近。"
+        },
+        {
+          "role": "staging",
+          "knowledge": "固定入口与门闩的相对位置。",
+          "decision": "人物位于门前，门闩始终在人物右前方。"
+        },
+        {
+          "role": "dialogue",
+          "knowledge": "台词承接可见发现。",
+          "decision": "保留原句和说话顺序，动作停顿后开口。"
+        },
+        {
+          "role": "sound",
+          "knowledge": "动作音效与接触瞬间对应。",
+          "decision": "持续铺设微弱院外风声，接触时出现轻响。"
+        },
+        {
+          "role": "vfx",
+          "knowledge": "实物线索不需要视觉特效。",
+          "decision": "本镜不需要特效。"
+        }
+      ],
+      "audio": {
+        "ambience": "轻微院外风声。",
+        "music": "低音弦乐长音。",
+        "effects": [
+          "门扇细响。"
+        ]
+      },
+      "depends_on": [
+        {
+          "id": "BEAT-LOCK",
+          "revision": 1,
+          "fingerprint": "92c70bee9b41fb5ad80c7b0fc648a9bd74f389ccf288f79d6bfc5014b373bc24"
+        },
+        {
+          "id": "CHAR-WANQING",
+          "revision": 1,
+          "fingerprint": "a61a6aeb557e87c087ed8c208cb92fdbd74b6bd67cc61fd362349d7f08812872"
+        },
+        {
+          "id": "LINE-LOCK",
+          "revision": 1,
+          "fingerprint": "c1ee24bdb420336cf5bbab623a316e30040d48202f577325410cf73a1fe2b89c"
+        },
+        {
+          "id": "PRJ-COURTYARD",
+          "revision": 1,
+          "fingerprint": "a0474a02c2505a76bb5c63d78f5e4b63b8ce1e9cd8bbf0baf7c4ba7251840416"
+        },
+        {
+          "id": "SCENE-GATE",
+          "revision": 1,
+          "fingerprint": "d8a822156f26750fd2463ff94438433a1680b816c65c3480fe24fe6418f97ac3"
+        }
+      ],
+      "function": "建立新锁异常，触发人物查证动机。",
+      "transitions": {
+        "incoming": "由院门外的静态环境切入晚晴观察门闩的中近景，风声延续。",
+        "outgoing": "以晚晴手指停在新锁旁收束，下镜沿相同门扇与视线方向接入门框缝隙。"
+      },
+      "review": {
+        "design_id": "9B-SHOT-001",
+        "status": "unreviewed"
+      },
+      "notes": ""
+    },
+    {
+      "id": "SHOT-002",
+      "revision": 1,
+      "title": "取回钥匙",
+      "scene_ids": [
+        "SCENE-GATE"
+      ],
+      "character_ids": [
+        "CHAR-WANQING"
+      ],
+      "prop_ids": [
+        "PROP-KEY"
+      ],
+      "beat_ids": [
+        "BEAT-KEY"
+      ],
+      "duration": 5.0,
+      "segments": [
+        {
+          "index": 1,
+          "start": 0.0,
+          "end": 5.0,
+          "description": "晚晴从门框缝隙取回铜钥匙，确认旧线索仍在。",
+          "lines": [
+            {
+              "dialogue_id": "LINE-KEY",
+              "text": "钥匙还在这里。"
+            }
+          ]
+        }
+      ],
+      "static_prompt_ids": [
+        "PROMPT-SPACE-GATE",
+        "PROMPT-BOARD-002"
+      ],
+      "dynamic_prompt_id": "PROMPT-VIDEO-002",
+      "design": [
+        {
+          "role": "director",
+          "knowledge": "用动作揭示线索，保留发现与确认的先后关系。",
+          "decision": "把当前节拍的发现完整呈现在一个镜头中。"
+        },
+        {
+          "role": "camera",
+          "knowledge": "中近景兼顾人物表情与手中线索。",
+          "decision": "平视中近景，镜头随手部轻移，落在关键物上。"
+        },
+        {
+          "role": "lighting",
+          "knowledge": "光线变化不能替代可见叙事。",
+          "decision": "入口柔光照亮面部与门闩，辅光维持暗部可读。"
+        },
+        {
+          "role": "action",
+          "knowledge": "手部接触物体前交代路径。",
+          "decision": "先看向门闩，再把手移至目标附近。"
+        },
+        {
+          "role": "staging",
+          "knowledge": "固定入口与门闩的相对位置。",
+          "decision": "人物位于门前，门闩始终在人物右前方。"
+        },
+        {
+          "role": "dialogue",
+          "knowledge": "台词承接可见发现。",
+          "decision": "保留原句和说话顺序，动作停顿后开口。"
+        },
+        {
+          "role": "sound",
+          "knowledge": "动作音效与接触瞬间对应。",
+          "decision": "持续铺设微弱院外风声，接触时出现轻响。"
+        },
+        {
+          "role": "vfx",
+          "knowledge": "实物线索不需要视觉特效。",
+          "decision": "本镜不需要特效。"
+        }
+      ],
+      "audio": {
+        "ambience": "轻微院外风声。",
+        "music": "低音弦乐长音。",
+        "effects": [
+          "铜钥匙接触掌心的轻响。"
+        ]
+      },
+      "depends_on": [
+        {
+          "id": "BEAT-KEY",
+          "revision": 1,
+          "fingerprint": "8847fcfa6c489be7f9533c4168882ecd6514c27750c4972cc1fad7ec2b05ad78"
+        },
+        {
+          "id": "CHAR-WANQING",
+          "revision": 1,
+          "fingerprint": "a61a6aeb557e87c087ed8c208cb92fdbd74b6bd67cc61fd362349d7f08812872"
+        },
+        {
+          "id": "LINE-KEY",
+          "revision": 1,
+          "fingerprint": "e3544e3440810d659efccc031fbd0de3804adafc1c2d49598573bcd8f1bee742"
+        },
+        {
+          "id": "PRJ-COURTYARD",
+          "revision": 1,
+          "fingerprint": "a0474a02c2505a76bb5c63d78f5e4b63b8ce1e9cd8bbf0baf7c4ba7251840416"
+        },
+        {
+          "id": "PROP-KEY",
+          "revision": 1,
+          "fingerprint": "8428abdf94aef0a300c978ce8d90c92e8075e19705ccea1f6cc4808a45a5a7f1"
+        },
+        {
+          "id": "SCENE-GATE",
+          "revision": 1,
+          "fingerprint": "d8a822156f26750fd2463ff94438433a1680b816c65c3480fe24fe6418f97ac3"
+        }
+      ],
+      "function": "取回铜钥匙，将异常发现转为可追查的实物线索。",
+      "transitions": {
+        "incoming": "承接上一镜门前站位与抬手动作，镜头随视线移到门框缝隙，风声与弦乐连续。",
+        "outgoing": "落在掌中铜钥匙的近景，以金属轻响收束，为后续查验钥匙保留动作接口。"
+      },
+      "review": {
+        "design_id": "9B-SHOT-002",
+        "status": "unreviewed"
+      },
+      "notes": ""
+    }
+  ],
+  "prompts": [
+    {
+      "id": "PROMPT-SPACE-GATE",
+      "revision": 1,
+      "template": "T5",
+      "shot_id": null,
+      "duration": null,
+      "asset_ids": [
+        "SCENE-GATE"
+      ],
+      "reference_bindings": [
+        {
+          "slot": "@图片1",
+          "asset_id": "SCENE-GATE"
+        }
+      ],
+      "text": "@图片1 参考场景旧院门的空间布局、色彩光影与画面风格。禁止继承构图、景别。\n生成一张三行三列的九视角场景空间参考图。写实材质，清晰建筑线条。\n旧院门由青灰石阶、双扇木门、门闩、院墙和屋檐构成。入口右侧门扇上的门闩与铜锁位置固定，入口左侧墙的剥落墙皮位置固定。\n九格依次呈现入口正面、入口左侧角落朝正对面、入口右侧角落朝正对面、院内朝入口、院内斜俯、入口右侧墙沿线、入口左侧墙沿线、院内全貌、门闩近景。\n基础漫射光均匀照亮木纹与砖缝，空间纵深清晰，各格使用同一材质与基础色彩。\n院门铰链与门闩位置稳定，九个视角的墙体连续闭合，地面砖缝沿同一轴线延伸。\n--ar 9:16",
+      "depends_on": [
+        {
+          "id": "PRJ-COURTYARD",
+          "revision": 1,
+          "fingerprint": "a0474a02c2505a76bb5c63d78f5e4b63b8ce1e9cd8bbf0baf7c4ba7251840416"
+        },
+        {
+          "id": "SCENE-GATE",
+          "revision": 1,
+          "fingerprint": "d8a822156f26750fd2463ff94438433a1680b816c65c3480fe24fe6418f97ac3"
+        }
+      ]
+    },
+    {
+      "id": "PROMPT-BOARD-001",
+      "revision": 1,
+      "template": "T6B",
+      "shot_id": "SHOT-001",
+      "duration": null,
+      "asset_ids": [
+        "CHAR-WANQING",
+        "SCENE-GATE"
+      ],
+      "reference_bindings": [
+        {
+          "slot": "@图片1",
+          "asset_id": "CHAR-WANQING"
+        },
+        {
+          "slot": "@图片2",
+          "asset_id": "SCENE-GATE"
+        }
+      ],
+      "text": "@图片1 参考角色晚晴的五官、发型轮廓与服装结构。禁止继承背景、色彩、光影、画面风格、动作、表情。\n@图片2 参考场景旧院门的空间布局与建筑结构。禁止继承构图、景别、色彩、光影、画面风格。\n生成一张黑白线稿专业影视故事版，整体为横向两栏布局，左栏为空间俯瞰与信息区，右栏为三行三列九宫格剧情画面。\n晚晴的窄脸、低束黑发、长衫轮廓和黑布鞋完整统一。\n左栏俯瞰图标出入口墙、入口右侧门扇、门闩与人物位置；右栏九格按动作经过顺序展开，每格均为竖屏画面区。\n九格围绕同一个物理镜头的连续动作节点选取定格画面。晚晴抬眼查看新门闩，指尖停在铜锁旁。各格采用平视中近景，标准焦距，中等景深，人物眼睛与手部清晰，前后格空间位置连续。\n整体情绪为警觉、探查、确认，九格随线索递进。\n右栏各格下方仅显示Shot编号，黑白线稿线条清楚，背景浅灰，左栏文字标注与剧情画面分离。\n人物五官与衣纹在九格中保持统一，门闩沿固定门扇排列，手掌与实物接触清楚。\n--ar 16:9",
+      "depends_on": [
+        {
+          "id": "CHAR-WANQING",
+          "revision": 1,
+          "fingerprint": "a61a6aeb557e87c087ed8c208cb92fdbd74b6bd67cc61fd362349d7f08812872"
+        },
+        {
+          "id": "PRJ-COURTYARD",
+          "revision": 1,
+          "fingerprint": "a0474a02c2505a76bb5c63d78f5e4b63b8ce1e9cd8bbf0baf7c4ba7251840416"
+        },
+        {
+          "id": "SCENE-GATE",
+          "revision": 1,
+          "fingerprint": "d8a822156f26750fd2463ff94438433a1680b816c65c3480fe24fe6418f97ac3"
+        },
+        {
+          "id": "SHOT-001",
+          "revision": 1,
+          "fingerprint": "5da0b44e65f6cfae5e487835d68aff416714d7bc5db75ae60fa1b76cc3e40c7d"
+        }
+      ]
+    },
+    {
+      "id": "PROMPT-VIDEO-001",
+      "revision": 1,
+      "template": "T9",
+      "shot_id": "SHOT-001",
+      "duration": 5.0,
+      "asset_ids": [
+        "CHAR-WANQING",
+        "SCENE-GATE"
+      ],
+      "reference_bindings": [
+        {
+          "slot": "@素材1",
+          "asset_id": "CHAR-WANQING"
+        },
+        {
+          "slot": "@素材2",
+          "asset_id": "SCENE-GATE"
+        },
+        {
+          "slot": "@素材3",
+          "asset_id": "PROMPT-BOARD-001"
+        }
+      ],
+      "text": "@素材1 参考角色晚晴的外观、服饰、画面风格。禁止继承背景、光影、色彩、动作、表情。\n@素材2 参考场景旧院门的空间布局与关键定锚物位置。禁止继承画面风格、光影、色彩、构图、景别。\n@素材3 参考故事板右栏9宫格剧情画面的角色姿态、空间站位、场景形态与道具状态。禁止继承画面风格、光影、色彩、构图、景别、运镜。\n生成一段单镜头5秒的悬疑短片。同步生成环境音、音效、配音与背景音乐，音画口型同步。画面纯净，无字幕。\n角色晚晴：参考@素材1，年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋。\n场景旧院门：参考@素材2，前景青灰石阶连接木门，中景木门与门闩贴合，背景院墙闭合，远景屋檐越过墙顶。\n整体情绪为警觉、探查、确认，从短暂停顿推进至线索清晰。\n写实电影风格，木材与铜器纹理细腻，皮肤自然。主光为入口漫射天光，从画面左上方照亮脸部，冷白柔和，亮部清晰；辅光为地面反射光，从下方轻抬阴影，淡灰微亮；轮廓光为门边散射光，从人物后侧勾出发丝细边，冷白纤细；环境光为院内漫射光，均匀铺满墙面，灰蓝低饱和。4K清晰画质，木纹连续，铜面反光柔和。\n环境音：全片持续铺设轻微院外风声。\nBGM：全片铺设低音弦乐长音，音量轻。\n镜头1（0.0-5.0s）：平视中近景，镜头轻推，晚晴站在画面左侧的院门前，面向画面右侧门闩，目光沿新铜锁的亮边停住，眉心靠拢，手指从身侧抬至锁旁并停下，清亮女中音，匀速，短句收尾：“门锁换过了。”门扇在指尖轻触时发出细响，镜头停在门闩与手指之间。\n人物面部与低束发型稳定，手指沿门框连续移动，衣袖接触木门时自然弯折贴合。\n--ar 9:16",
+      "depends_on": [
+        {
+          "id": "CHAR-WANQING",
+          "revision": 1,
+          "fingerprint": "a61a6aeb557e87c087ed8c208cb92fdbd74b6bd67cc61fd362349d7f08812872"
+        },
+        {
+          "id": "PRJ-COURTYARD",
+          "revision": 1,
+          "fingerprint": "a0474a02c2505a76bb5c63d78f5e4b63b8ce1e9cd8bbf0baf7c4ba7251840416"
+        },
+        {
+          "id": "PROMPT-BOARD-001",
+          "revision": 1,
+          "fingerprint": "9ab4407ceca6f95d6b57b751ef62a42a675367755e73290c7a5a3f727c74dbb5"
+        },
+        {
+          "id": "SCENE-GATE",
+          "revision": 1,
+          "fingerprint": "d8a822156f26750fd2463ff94438433a1680b816c65c3480fe24fe6418f97ac3"
+        },
+        {
+          "id": "SHOT-001",
+          "revision": 1,
+          "fingerprint": "5da0b44e65f6cfae5e487835d68aff416714d7bc5db75ae60fa1b76cc3e40c7d"
+        }
+      ]
+    },
+    {
+      "id": "PROMPT-BOARD-002",
+      "revision": 1,
+      "template": "T6B",
+      "shot_id": "SHOT-002",
+      "duration": null,
+      "asset_ids": [
+        "CHAR-WANQING",
+        "SCENE-GATE",
+        "PROP-KEY"
+      ],
+      "reference_bindings": [
+        {
+          "slot": "@图片1",
+          "asset_id": "CHAR-WANQING"
+        },
+        {
+          "slot": "@图片2",
+          "asset_id": "SCENE-GATE"
+        },
+        {
+          "slot": "@图片3",
+          "asset_id": "PROP-KEY"
+        }
+      ],
+      "text": "@图片1 参考角色晚晴的五官、发型轮廓与服装结构。禁止继承背景、色彩、光影、画面风格、动作、表情。\n@图片2 参考场景旧院门的空间布局与建筑结构。禁止继承构图、景别、色彩、光影、画面风格。\n@图片3 参考道具铜钥匙的外形结构与齿口轮廓。禁止继承背景、色彩、光影、画面风格。\n生成一张黑白线稿专业影视故事版，整体为横向两栏布局，左栏为空间俯瞰与信息区，右栏为三行三列九宫格剧情画面。\n晚晴的窄脸、低束黑发、长衫轮廓和黑布鞋完整统一；铜钥匙保留环形匙柄与缺角齿口。\n左栏俯瞰图标出入口墙、入口右侧门扇、门闩与人物位置；右栏九格按动作经过顺序展开，每格均为竖屏画面区。\n九格围绕同一个物理镜头的连续动作节点选取定格画面。晚晴伸手探入门框缝隙，取出铜钥匙并托在掌中。各格采用平视中近景，标准焦距，中等景深，人物眼睛与手部清晰，前后格空间位置连续。\n整体情绪为警觉、探查、确认，九格随线索递进。\n右栏各格下方仅显示Shot编号，黑白线稿线条清楚，背景浅灰，左栏文字标注与剧情画面分离。\n人物五官与衣纹在九格中保持统一，门闩沿固定门扇排列，手掌与实物接触清楚。\n--ar 16:9",
+      "depends_on": [
+        {
+          "id": "CHAR-WANQING",
+          "revision": 1,
+          "fingerprint": "a61a6aeb557e87c087ed8c208cb92fdbd74b6bd67cc61fd362349d7f08812872"
+        },
+        {
+          "id": "PRJ-COURTYARD",
+          "revision": 1,
+          "fingerprint": "a0474a02c2505a76bb5c63d78f5e4b63b8ce1e9cd8bbf0baf7c4ba7251840416"
+        },
+        {
+          "id": "PROP-KEY",
+          "revision": 1,
+          "fingerprint": "8428abdf94aef0a300c978ce8d90c92e8075e19705ccea1f6cc4808a45a5a7f1"
+        },
+        {
+          "id": "SCENE-GATE",
+          "revision": 1,
+          "fingerprint": "d8a822156f26750fd2463ff94438433a1680b816c65c3480fe24fe6418f97ac3"
+        },
+        {
+          "id": "SHOT-002",
+          "revision": 1,
+          "fingerprint": "804de1672c92615a9bbc636c9e79af3932db92d5fa9cb1cb68d513ccc95fd1c9"
+        }
+      ]
+    },
+    {
+      "id": "PROMPT-VIDEO-002",
+      "revision": 1,
+      "template": "T9",
+      "shot_id": "SHOT-002",
+      "duration": 5.0,
+      "asset_ids": [
+        "CHAR-WANQING",
+        "SCENE-GATE",
+        "PROP-KEY"
+      ],
+      "reference_bindings": [
+        {
+          "slot": "@素材1",
+          "asset_id": "CHAR-WANQING"
+        },
+        {
+          "slot": "@素材2",
+          "asset_id": "SCENE-GATE"
+        },
+        {
+          "slot": "@素材3",
+          "asset_id": "PROP-KEY"
+        },
+        {
+          "slot": "@素材4",
+          "asset_id": "PROMPT-BOARD-002"
+        }
+      ],
+      "text": "@素材1 参考角色晚晴的外观、服饰、画面风格。禁止继承背景、光影、色彩、动作、表情。\n@素材2 参考场景旧院门的空间布局与关键定锚物位置。禁止继承画面风格、光影、色彩、构图、景别。\n@素材3 参考道具铜钥匙的外观、材质、画面风格。禁止继承背景、光影、色彩。\n@素材4 参考故事板右栏9宫格剧情画面的角色姿态、空间站位、场景形态与道具状态。禁止继承画面风格、光影、色彩、构图、景别、运镜。\n生成一段单镜头5秒的悬疑短片。同步生成环境音、音效、配音与背景音乐，音画口型同步。画面纯净，无字幕。\n角色晚晴：参考@素材1，年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋。\n道具铜钥匙：参考@素材3，扁平铜质，环形匙柄，缺角齿口，表面细小暗斑。\n场景旧院门：参考@素材2，前景青灰石阶连接木门，中景木门与门闩贴合，背景院墙闭合，远景屋檐越过墙顶。\n整体情绪为警觉、探查、确认，从短暂停顿推进至线索清晰。\n写实电影风格，木材与铜器纹理细腻，皮肤自然。主光为入口漫射天光，从画面左上方照亮脸部，冷白柔和，亮部清晰；辅光为地面反射光，从下方轻抬阴影，淡灰微亮；轮廓光为门边散射光，从人物后侧勾出发丝细边，冷白纤细；环境光为院内漫射光，均匀铺满墙面，灰蓝低饱和。4K清晰画质，木纹连续，铜面反光柔和。\n环境音：全片持续铺设轻微院外风声。\nBGM：全片铺设低音弦乐长音，音量轻。\n镜头1（0.0-5.0s）：平视中近景，镜头随手部轻移，晚晴位于画面左侧门前，面向画面右侧门框缝隙，目光先落向缝口，手指沿木框下滑并探入缝隙，捏住铜钥匙环柄后向外抽出，手掌翻开托住铜钥匙，眼睑稍抬，清亮女中音，匀速，短句收尾：“钥匙还在这里。”钥匙碰到掌心发出轻响，画面落在托住钥匙的手掌。\n人物面部与低束发型稳定，手指沿门框连续移动，衣袖接触木门时自然弯折贴合。\n--ar 9:16",
+      "depends_on": [
+        {
+          "id": "CHAR-WANQING",
+          "revision": 1,
+          "fingerprint": "a61a6aeb557e87c087ed8c208cb92fdbd74b6bd67cc61fd362349d7f08812872"
+        },
+        {
+          "id": "PRJ-COURTYARD",
+          "revision": 1,
+          "fingerprint": "a0474a02c2505a76bb5c63d78f5e4b63b8ce1e9cd8bbf0baf7c4ba7251840416"
+        },
+        {
+          "id": "PROMPT-BOARD-002",
+          "revision": 1,
+          "fingerprint": "38a7d873b779d8ca9302548fcdba20c83c075764f9c70ad95abd6d8f96852b82"
+        },
+        {
+          "id": "PROP-KEY",
+          "revision": 1,
+          "fingerprint": "8428abdf94aef0a300c978ce8d90c92e8075e19705ccea1f6cc4808a45a5a7f1"
+        },
+        {
+          "id": "SCENE-GATE",
+          "revision": 1,
+          "fingerprint": "d8a822156f26750fd2463ff94438433a1680b816c65c3480fe24fe6418f97ac3"
+        },
+        {
+          "id": "SHOT-002",
+          "revision": 1,
+          "fingerprint": "804de1672c92615a9bbc636c9e79af3932db92d5fa9cb1cb68d513ccc95fd1c9"
+        }
+      ]
+    }
+  ]
+}
