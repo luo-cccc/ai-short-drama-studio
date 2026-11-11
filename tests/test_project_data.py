@@ -130,6 +130,17 @@ class ExportTests(unittest.TestCase):
     def setUp(self):
         self.data = load_project(DEMO)
 
+    def single_shot_data(self):
+        data = deepcopy(self.data)
+        data["shots"] = data["shots"][:1]
+        shot_ids = {shot["id"] for shot in data["shots"]}
+        beat_ids = {beat_id for shot in data["shots"] for beat_id in shot["beat_ids"]}
+        data["beats"] = [beat for beat in data["beats"] if beat["id"] in beat_ids]
+        data["dialogues"] = [line for line in data["dialogues"] if line["beat_id"] in beat_ids]
+        data["prompts"] = [prompt for prompt in data["prompts"]
+                           if prompt["shot_id"] is None or prompt["shot_id"] in shot_ids]
+        return snapshot_dependencies(data)
+
     def test_export_preserves_every_prompt_and_source_data(self):
         before = deepcopy(self.data)
         documents = render_documents(self.data)
@@ -147,6 +158,39 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(len(header.split("|")[1:-1]), 15)
         self.assertIn("未审查", text)
         self.assertIn(self.data["shots"][0]["transitions"]["incoming"], text)
+
+    def test_source_dialogue_order_survives_return_to_an_earlier_beat(self):
+        silent = deepcopy(self.data["beats"][0])
+        silent.update(id="BEAT-SILENT", summary="晚晴停住，院外风声延续。")
+        self.data["beats"].insert(1, silent)
+        self.data["shots"][0]["beat_ids"].append(silent["id"])
+        returned = deepcopy(self.data["dialogues"][0])
+        returned.update(id="LINE-RETURN", text="再看一眼门锁。")
+        self.data["dialogues"].append(returned)
+        last_shot = self.data["shots"][-1]
+        last_shot["beat_ids"].append(returned["beat_id"])
+        last_shot["segments"][-1]["lines"].append({
+            "dialogue_id": returned["id"], "text": returned["text"],
+        })
+        prompt = next(p for p in self.data["prompts"] if p["id"] == last_shot["dynamic_prompt_id"])
+        previous_quote = "“" + self.data["dialogues"][1]["text"] + "”"
+        prompt["text"] = prompt["text"].replace(
+            previous_quote, previous_quote + "她回看门锁：“" + returned["text"] + "”")
+        data = snapshot_dependencies(self.data)
+        text = render_documents(data)["project.md"]
+        source = text.split("## 剧本节拍与原始台词", 1)[1].split("## 静态资产总库", 1)[0]
+        dialogue_rows = [line for line in source.splitlines()
+                         if any(item["id"] in line for item in data["dialogues"])]
+        self.assertEqual(len(dialogue_rows), len(data["dialogues"]))
+        self.assertEqual([next(item["id"] for item in data["dialogues"] if item["id"] in row)
+                          for row in dialogue_rows], [item["id"] for item in data["dialogues"]])
+        for item, row in zip(data["dialogues"], dialogue_rows):
+            self.assertIn(item["beat_id"], row)
+            self.assertIn(item["text"], row)
+            self.assertEqual(source.count(item["text"]), 1)
+        for beat in data["beats"]:
+            self.assertIn(beat["id"], source)
+            self.assertEqual(source.count(beat["summary"]), 1)
 
     def test_invalid_or_stale_data_does_not_create_output(self):
         self.data["characters"][0]["revision"] += 1
@@ -181,6 +225,91 @@ class ExportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "非托管"):
                 export_project(self.data, temporary)
             self.assertEqual(target.read_text(encoding="utf-8"), "已有文档")
+
+    def test_obsolete_files_remain_reported_until_deleted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            export_project(self.data, output)
+            stale_name = self.data["shots"][1]["id"] + "_分镜.md"
+            stale = output / stale_name
+            original = stale.read_bytes()
+            reduced = self.single_shot_data()
+            for _ in range(2):
+                _, obsolete = export_project(reduced, output)
+                self.assertEqual(obsolete, [stale_name])
+                manifest = load_project(output / ".drama-export.json")
+                self.assertEqual(manifest["obsolete_files"], [stale_name])
+                self.assertEqual(stale.read_bytes(), original)
+            stale.unlink()
+            _, obsolete = export_project(reduced, output)
+            self.assertEqual(obsolete, [])
+            manifest = load_project(output / ".drama-export.json")
+            self.assertEqual(manifest["obsolete_files"], [])
+            self.assertNotIn(stale_name, manifest["obsolete_file_fingerprints"])
+
+    def test_unchanged_obsolete_file_can_be_restored_to_managed_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            export_project(self.data, output)
+            export_project(self.single_shot_data(), output)
+            restored = deepcopy(self.data)
+            restored["shots"][1]["title"] += " · 修订"
+            restored["shots"][1]["revision"] += 1
+            restored = snapshot_dependencies(restored)
+            _, obsolete = export_project(restored, output)
+            self.assertEqual(obsolete, [])
+            manifest = load_project(output / ".drama-export.json")
+            restored_name = self.data["shots"][1]["id"] + "_分镜.md"
+            self.assertIn(restored_name, manifest["files"])
+            self.assertNotIn(restored_name, manifest["obsolete_file_fingerprints"])
+            self.assertEqual((output / restored_name).read_text(encoding="utf-8"),
+                             render_documents(restored)[restored_name])
+
+    def test_manually_edited_obsolete_file_blocks_restore_before_any_writes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            export_project(self.data, output)
+            reduced = self.single_shot_data()
+            export_project(reduced, output)
+            stale = output / (self.data["shots"][1]["id"] + "_分镜.md")
+            stale.write_text("过期镜头的人工批注", encoding="utf-8")
+            export_project(reduced, output)
+            before = {path.name: path.read_bytes() for path in output.iterdir()}
+            with self.assertRaisesRegex(ValueError, "手工修改"):
+                export_project(self.data, output)
+            self.assertEqual({path.name: path.read_bytes() for path in output.iterdir()}, before)
+
+    def test_legacy_obsolete_record_persists_but_does_not_prove_safe_restore(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            export_project(self.data, output)
+            reduced = self.single_shot_data()
+            export_project(reduced, output)
+            manifest_path = output / ".drama-export.json"
+            manifest = load_project(manifest_path)
+            manifest.pop("obsolete_file_fingerprints", None)
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            stale_name = self.data["shots"][1]["id"] + "_分镜.md"
+            _, obsolete = export_project(reduced, output)
+            self.assertEqual(obsolete, [stale_name])
+            before = (output / stale_name).read_bytes()
+            with self.assertRaisesRegex(ValueError, "非托管"):
+                export_project(self.data, output)
+            self.assertEqual((output / stale_name).read_bytes(), before)
+
+    def test_replacement_after_obsolete_cleanup_is_unmanaged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            export_project(self.data, output)
+            reduced = self.single_shot_data()
+            export_project(reduced, output)
+            stale = output / (self.data["shots"][1]["id"] + "_分镜.md")
+            stale.unlink()
+            export_project(reduced, output)
+            stale.write_text("同名新文档", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "非托管"):
+                export_project(self.data, output)
+            self.assertEqual(stale.read_text(encoding="utf-8"), "同名新文档")
 
 
 if __name__ == "__main__":

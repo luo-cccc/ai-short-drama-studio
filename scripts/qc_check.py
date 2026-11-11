@@ -53,6 +53,79 @@ def clip_quoted(text: str) -> str:
     return "".join(quoted_strings(text))
 
 
+def _management_body(text: str, mode: str) -> str:
+    """豁免镜头行对白与有说话/OS/NAR引导的续行，说明中的引号仍受检。"""
+    if mode != "dynamic":
+        return text
+    spoken = re.compile(r'(?:说|问|答|喊|念|道|OS|NAR|旁白|独白|画外音|台词)[：:][ \t]*$', re.I)
+    line_states, in_shot = {}, False
+    for row in re.finditer(r"(?m)^([^\n]*)", text):
+        line = row.group(1)
+        timestamp = bool(STAMP_RE.match(line.lstrip(" \t")))
+        if timestamp:
+            in_shot = True
+        elif line.lstrip(" \t").startswith("--ar"):
+            in_shot = False
+        line_states[row.start()] = timestamp, in_shot
+
+    def without_dialogue(match):
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        timestamp, active = line_states[line_start]
+        prefix = text[line_start:match.start()]
+        return "" if timestamp or (active and spoken.search(prefix)) else match.group()
+
+    # 与quoted_strings一致，中文引号内允许换行；豁免范围由开引号的位置决定。
+    return re.sub(r'“[^”]*”|"[^"\n]*"', without_dialogue, text)
+
+
+def _reference_declarations(text: str) -> list[tuple[str, str]]:
+    """独立抽取参考声明；相邻协议续句可以另起行或隔空行。"""
+    lines, declarations = text.splitlines(), []
+    continuation = re.compile(
+        r"^(?:禁止\s*继承|只取|不取|不继承|不参考|不包含|不采纳|禁止参考|排除|不使用|"
+        r"(?:并|同时|继续)?(?:继承|参考|采用|沿用|保留))"
+    )
+    for index, line in enumerate(lines):
+        match = re.match(r"^[ \t]*(@(?:素材|图片)\d+)[ \t]+参考[ \t]*([^\r\n]+)", line)
+        if not match:
+            continue
+        slot, first = match.groups()
+        parts = [first.strip()]
+        for following in lines[index + 1:]:
+            following = following.strip()
+            if not following:
+                continue
+            if not continuation.match(following):
+                break
+            parts.append(following)
+        declarations.append((slot, "\n".join(parts)))
+    return declarations
+
+
+def _reference_scope(declaration: str) -> tuple[bool, str, set[str]]:
+    """按声明主语识别场景参考，分离正向描述与明确禁止项。"""
+    positive, excluded = [], set()
+    negative_start = re.compile(r"^(?:禁止\s*继承|不取|不继承|不参考|不包含|不采纳|禁止参考|排除|不使用)")
+    positive_start = re.compile(r"^(?:(?:并|同时|继续)?(?:继承|参考|采用|沿用|保留|只取|取)|但|却|然而|仍)")
+    for sentence in re.split(r"[。！？!?\n]", declaration):
+        scope = "positive"
+        for clause in re.split(r"[，；;]", sentence):
+            clause = clause.strip()
+            if not clause:
+                continue
+            if negative_start.match(clause):
+                scope = "excluded" if re.match(r"^禁止\s*继承", clause) else "negative"
+            elif positive_start.match(clause):
+                scope = "positive"
+            if scope == "excluded":
+                excluded.update(word for word in ("画面风格", "光影", "色彩") if word in clause)
+            elif scope == "positive":
+                positive.append(clause)
+    subject = re.search(r"故事分镜图|故事板|调度图|场景|角色|人物|道具", positive[0] if positive else "")
+    scene = bool(subject and subject.group() in {"场景", "故事板", "故事分镜图", "调度图"})
+    return scene, "，".join(positive), excluded
+
+
 def _template(text: str) -> str | None:
     match = TEMPLATE_RE.search(text)
     return "T" + match.group(1).upper() if match else None
@@ -78,9 +151,8 @@ def _check_t6b_references(text: str) -> tuple[list[str], list[str]]:
     negative_start = re.compile(r"^(?:不取|不继承|不参考|不包含|不采纳|禁止继承|禁止参考|排除|不使用)")
     uncertain_negative = re.compile(r"不|无|非|除|避免|禁止|舍弃")
     positive_followup = re.compile(r"^(?:并|同时|继续)?(?:继承|参考|采用|沿用|保留|只取|取)")
-    for match in re.finditer(r"(?m)^\s*(@(?:素材|图片)\d+)\s+参考([^\n]+)", text):
-        slot, declaration = match.groups()
-        sentences = re.split(r"[。！？!?]", declaration)
+    for slot, declaration in _reference_declarations(text):
+        sentences = re.split(r"[。！？!?\n]", declaration)
         for sentence_index, sentence in enumerate(sentences):
             for clause in re.split(r"[，；;]", sentence):
                 clause = clause.strip()
@@ -148,6 +220,7 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
     if not text.strip():
         return ["描述词为空"], []
     body, quoted = strip_ar(text), clip_quoted(text)
+    management_body = _management_body(body, mode)
     layout = template in {"T5", "T6", "T6B"}
     for p, name in DISALLOWED_PUNCT.items():
         if p in quoted:
@@ -162,7 +235,7 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
         if duplicate in quoted:
             errors.append(f"叠字标点「{duplicate}」出现在台词引号内")
     for label in MECHANISM_LABELS:
-        if label in body:
+        if label in management_body:
             errors.append(f"机制/管理标签「{label}」出现在描述词")
     if not layout and ("【" in body or "】" in body):
         errors.append("管理标签【】出现在描述词")
@@ -171,7 +244,8 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
     for match in re.finditer(r"@(?:素材|图片)\d+\s*锚定", body):
         errors.append(f"旧版锚定句式「{match.group()}」残留，请使用参考声明")
 
-    declarations = re.findall(r"(?m)^\s*(@(?:素材|图片)\d+)\s+参考[^\n]+", text)
+    references = _reference_declarations(text)
+    declarations = [slot for slot, _ in references]
     for slot, count in Counter(declarations).items():
         if count > 1:
             errors.append(f"素材位{slot}重复声明")
@@ -181,13 +255,16 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
         reference_errors, reference_warnings = _check_t6b_references(text)
         errors.extend(reference_errors)
         warns.extend(reference_warnings)
-    for match in re.finditer(r"@(素材|图片)(\d+)\s*参考([^。]+)。禁止继承([^。]+)。", body):
-        ref_what, ref_ban = match.group(3), match.group(4)
-        if any(word in ref_what for word in ["场景", "故事板", "故事分镜图", "调度图"]):
-            if mode == "dynamic" and not all(word in ref_ban for word in ["画面风格", "光影", "色彩"]):
-                errors.append(f"@{match.group(1)}{match.group(2)}动态场景/故事板参考缺少禁止继承画面风格、光影、色彩")
-            if mode == "static" and template != "T6B" and any(word in ref_what for word in ["画面风格", "色彩光影", "材质光影"]) and any(word in ref_ban for word in ["画面风格", "光影", "色彩"]):
-                errors.append(f"@{match.group(1)}{match.group(2)}静态场景参考的继承项与禁止项冲突")
+    for slot, declaration in references:
+        scene, ref_what, excluded = _reference_scope(declaration)
+        if scene:
+            if mode == "dynamic":
+                if excluded != {"画面风格", "光影", "色彩"}:
+                    errors.append(f"{slot}动态场景/故事板参考缺少禁止继承画面风格、光影、色彩")
+                if any(word in ref_what for word in ("画面风格", "光影", "色彩")):
+                    errors.append(f"{slot}动态场景/故事板参考不能正向继承画面风格、光影、色彩")
+            if mode == "static" and template != "T6B" and any(word in ref_what for word in ["画面风格", "色彩光影", "材质光影"]) and excluded:
+                errors.append(f"{slot}静态场景参考的继承项与禁止项冲突")
     visual_body = re.sub(r'“[^”]*”|"[^"\n]*"', "", body)
     for pattern in PHYSICAL_UNITS:
         for value in re.findall(pattern, visual_body):

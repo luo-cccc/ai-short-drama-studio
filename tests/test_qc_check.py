@@ -124,6 +124,42 @@ class PromptChecks(unittest.TestCase):
         self.assertFalse(errors)
         self.assertFalse(any("500" in w for w in warnings))
 
+    def test_spoken_management_words_are_allowed_only_in_dynamic_shots(self):
+        for quote in ['"你就是按模板做事的人。"', '“请把首帧和尾帧发给我。”']:
+            with self.subTest(quote=quote):
+                source = dynamic_text().replace('"别动。"', quote)
+                self.assertFalse(qc.check(source, duration=10)[0])
+        for source, mode in [
+            ('生成角色图，注明“模板”与“首帧”。', "static"),
+            ('生成角色图，注明“这是\n模板说明。”', "static"),
+            ('“模板”用于本片。\n' + dynamic_text(), "dynamic"),
+            ('“这是\n模板说明。”\n' + dynamic_text(), "dynamic"),
+            (dynamic_text().replace("--ar 16:9", '尾部说明使用“模板”。\n--ar 16:9'), "dynamic"),
+            (dynamic_text().replace("--ar 16:9", '尾部说明使用“这是\n模板说明。”\n--ar 16:9'), "dynamic"),
+            (dynamic_text().replace("镜头平移，", "首帧保持清楚，镜头平移，"), "dynamic"),
+        ]:
+            with self.subTest(mode=mode, source=source):
+                errors, _ = qc.check(source, mode=mode, duration=10)
+                self.assertTrue(any("机制/管理标签" in error for error in errors), errors)
+
+    def test_spoken_continuation_lines_keep_management_words(self):
+        for cue in ["林舟低声说", "OS", "NAR"]:
+            with self.subTest(cue=cue):
+                source = dynamic_text().replace('低声匀速说："别动。"', '\n' + cue + '：“你就是按模板做事的人。”')
+                self.assertFalse(qc.check(source, duration=10)[0])
+        source = dynamic_text().replace('低声匀速说："别动。"', '\n说明：“模板”位于这里。')
+        self.assertTrue(any("机制/管理标签" in error for error in qc.check(source, duration=10)[0]))
+
+    def test_dialogue_exemption_preserves_punctuation_placeholders_and_slots(self):
+        for utterance, expected in [
+            ("模板、首帧。", "禁用标点"),
+            ("模板[角色名称]。", "占位符残留"),
+            ("模板@素材9。", "没有独立参考声明"),
+        ]:
+            with self.subTest(utterance=utterance):
+                errors, _ = qc.check(dynamic_text().replace("别动。", utterance), duration=10)
+                self.assertTrue(any(expected in error for error in errors), errors)
+
     def test_t6b_rejects_positive_reference_color_light_and_style(self):
         for inheritance in ["角色外观、服饰与画面风格", "场景空间布局、色彩光影", "场景颜色与布光", "角色轮廓与渲染风格"]:
             with self.subTest(inheritance=inheritance):
@@ -167,6 +203,50 @@ class PromptChecks(unittest.TestCase):
         source = "@素材1 参考场景空间布局。禁止继承构图、景别。\n" + dynamic_text()
         errors, _ = qc.check(source, mode="dynamic", duration=10, template="T9")
         self.assertTrue(any("动态场景/故事板参考缺少" in error for error in errors))
+
+    def test_dynamic_scene_reference_requires_complete_exclusions_without_borrowing(self):
+        for declaration in [
+            "@素材1 参考场景空间布局。",
+            "@素材1 参考场景空间布局。\n禁止继承构图、景别。",
+            "@素材1 参考故事板空间站位。\n\n禁止继承画面风格、光影。",
+            "@素材1 参考故事分镜图空间站位。\n@素材2 参考角色外观。禁止继承画面风格、光影、色彩。",
+            "@素材1 参考调度图空间站位。\n生成影片。\n禁止继承画面风格、光影、色彩。",
+        ]:
+            with self.subTest(declaration=declaration):
+                errors, _ = qc.check(declaration + "\n" + dynamic_text(), duration=10, template="T9")
+                self.assertTrue(any("@素材1动态场景/故事板参考缺少" in error for error in errors), errors)
+
+    def test_dynamic_scene_reference_accepts_inline_and_separate_protocol_lines(self):
+        for declaration in [
+            "@素材1 参考场景空间布局。禁止继承画面风格、光影、色彩。",
+            "  @素材1\t参考 场景空间布局。\n\n  禁止继承 画面风格 ， 光影 ， 色彩 。  ",
+            "@素材1 参考故事板空间站位。\n禁止继承画面风格。\n\n禁止继承光影、色彩。",
+            "@素材1 参考调度图空间站位，只取造型结构，不取颜色与光影。\n禁止继承画面风格、光影、色彩。",
+        ]:
+            with self.subTest(declaration=declaration):
+                errors, _ = qc.check(declaration + "\n" + dynamic_text(), duration=10, template="T9")
+                self.assertFalse(errors)
+
+    def test_dynamic_scene_reference_rejects_positive_inheritance_even_with_exclusions(self):
+        for reference in [
+            "场景画面风格、光影、色彩。",
+            "场景空间布局。并继承光影与色彩。",
+            "故事板空间站位。\n继续沿用画面风格。",
+            "调度图空间站位。禁止继承画面风格、光影、色彩，但保留原图光影。",
+        ]:
+            with self.subTest(reference=reference):
+                source = "@素材1 参考" + reference + "\n禁止继承画面风格、光影、色彩。\n" + dynamic_text()
+                errors, _ = qc.check(source, duration=10, template="T9")
+                self.assertTrue(any("不能正向继承" in error for error in errors), errors)
+
+    def test_dynamic_character_and_prop_references_are_not_scene_references(self):
+        source = "\n".join([
+            "@素材1 参考角色林舟的外观、服饰与固有色彩。禁止继承场景背景、光影。",
+            "@素材2 参考道具铜钥匙的固有配色、材质与画面风格。禁止继承场景背景、光影。",
+            "@素材3 参考人物脸部与服装。禁止继承场景色彩。",
+            dynamic_text(),
+        ])
+        self.assertFalse(qc.check(source, duration=10, template="T9")[0])
 
     def test_invalid_duration_metadata_is_a_diagnostic(self):
         document = "<!-- prompt id=PROMPT-X template=T9 duration=nan -->\n```text\n" + dynamic_text() + "\n```"
@@ -243,6 +323,83 @@ class ProjectPromptChecks(unittest.TestCase):
         results = qc.check_project(self.data)
         self.assertEqual(len(results), 1)
         self.assertTrue(results[0]["errors"])
+
+
+class CompleteProjectQCRegressionTests(unittest.TestCase):
+    def synchronized_dialogue(self, utterance, continuation=False):
+        from scripts.project_data import load_project, snapshot_dependencies
+
+        data = load_project(ROOT / "examples" / "demo" / "project.json")
+        line = data["dialogues"][0]
+        old, line["text"] = line["text"], utterance
+        line["revision"] += 1
+        for shot in data["shots"]:
+            for segment in shot["segments"]:
+                for delivery in segment["lines"]:
+                    if delivery["dialogue_id"] == line["id"]:
+                        delivery["text"] = line["text"]
+                        shot["revision"] += 1
+        for prompt in data["prompts"]:
+            if prompt["template"] in {"T7", "T8", "T9"} and old in prompt["text"]:
+                prompt["text"] = prompt["text"].replace(old, line["text"])
+                if continuation:
+                    prompt["text"] = prompt["text"].replace(
+                        "清亮女中音，匀速，短句收尾：", "\n晚晴低声说："
+                    )
+                prompt["revision"] += 1
+        return snapshot_dependencies(data)
+
+    def test_synchronized_spoken_management_words_pass_qc_and_export(self):
+        from scripts.render_project import export_project
+
+        for continuation in [False, True]:
+            with self.subTest(continuation=continuation):
+                utterance = "你就是按模板做事的人。"
+                data = self.synchronized_dialogue(utterance, continuation)
+                errors = [error for result in qc.check_project(data) for error in result["errors"]]
+                self.assertFalse(errors)
+                with tempfile.TemporaryDirectory() as directory:
+                    paths, _ = export_project(data, directory)
+                    self.assertTrue(any(utterance in path.read_text(encoding="utf-8") for path in paths))
+
+    def test_multiline_chinese_dialogue_passes_complete_project_qc_and_export(self):
+        from scripts.project_data import validate_project
+        from scripts.render_project import export_project
+
+        for continuation in [False, True]:
+            with self.subTest(continuation=continuation):
+                utterance = "你就是按\n模板做事的人。"
+                data = self.synchronized_dialogue(utterance, continuation)
+                self.assertFalse(validate_project(data)[0])
+                self.assertFalse([error for result in qc.check_project(data) for error in result["errors"]])
+                with tempfile.TemporaryDirectory() as directory:
+                    paths, _ = export_project(data, directory)
+                    self.assertTrue(any(utterance in path.read_text(encoding="utf-8") for path in paths))
+
+    def test_invalid_scene_reference_blocks_complete_project_export(self):
+        from scripts.project_data import load_project, snapshot_dependencies
+        from scripts.render_project import export_project
+
+        for declaration in [
+            "@素材2 参考场景旧院门的空间布局。",
+            "@素材2 参考场景旧院门的空间布局。\n禁止继承构图、景别。",
+            "@素材2 参考场景旧院门的画面风格、光影、色彩。\n禁止继承画面风格、光影、色彩。",
+        ]:
+            with self.subTest(declaration=declaration):
+                data = load_project(ROOT / "examples" / "demo" / "project.json")
+                prompt = next(prompt for prompt in data["prompts"] if prompt["id"] == "PROMPT-VIDEO-001")
+                rows = prompt["text"].splitlines()
+                rows[1] = declaration
+                prompt["text"] = "\n".join(rows)
+                prompt["revision"] += 1
+                data = snapshot_dependencies(data)
+                errors = [error for result in qc.check_project(data) for error in result["errors"]]
+                self.assertTrue(any("动态场景/故事板参考" in error for error in errors), errors)
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / "delivery"
+                    with self.assertRaisesRegex(ValueError, "动态场景/故事板参考"):
+                        export_project(data, output)
+                    self.assertFalse(output.exists())
 
 
 class CLIInputChecks(unittest.TestCase):

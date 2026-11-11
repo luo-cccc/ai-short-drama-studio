@@ -68,10 +68,12 @@ def render_documents(data):
     for beat in data["beats"]:
         global_lines.extend([f"### {beat['id']} · {prose(index[beat['scene_id']]['name'])}\n",
                              prose(beat["summary"])])
-        for line in data["dialogues"]:
-            if line["beat_id"] == beat["id"]:
-                speaker = index[line["speaker_id"]]["name"] if line["speaker_id"] else "旁白"
-                global_lines.append(f"\n{line['id']} · {prose(speaker)}：{prose(line['text'])}")
+    global_lines.extend(["\n### 原始台词（执行顺序）\n",
+                         table(["台词 ID", "节拍 ID", "角色", "类型", "原文"], [
+                             [line["id"], line["beat_id"],
+                              index[line["speaker_id"]]["name"] if line["speaker_id"] else "旁白",
+                              line["kind"], line["text"]]
+                             for line in data["dialogues"]])])
     global_lines.extend(["\n## 静态资产总库\n"])
     for prompt in data["prompts"]:
         if prompt["shot_id"] is None:
@@ -158,6 +160,8 @@ def export_project(data, output):
     output = Path(output)
     manifest_path = output / ".drama-export.json"
     old_files = {}
+    old_obsolete = []
+    old_obsolete_fingerprints = {}
     if manifest_path.exists():
         manifest = load_project(manifest_path)
         if manifest.get("project_id") != data["project"]["id"]:
@@ -165,23 +169,35 @@ def export_project(data, output):
         old_files = manifest.get("files", {})
         if not isinstance(old_files, dict):
             raise ValueError("导出清单 files 非法")
+        old_obsolete = manifest.get("obsolete_files", [])
+        if not isinstance(old_obsolete, list) or not all(isinstance(name, str) for name in old_obsolete):
+            raise ValueError("导出清单 obsolete_files 非法")
+        old_obsolete_fingerprints = manifest.get("obsolete_file_fingerprints", {})
+        if not isinstance(old_obsolete_fingerprints, dict):
+            raise ValueError("导出清单 obsolete_file_fingerprints 非法")
+    managed_fingerprints = {**old_obsolete_fingerprints, **old_files}
     for name in documents:
         target = output / name
         if target.exists():
-            if name not in old_files:
+            if name not in managed_fingerprints:
                 raise ValueError(f"目标含非托管文件，拒绝覆盖：{target}")
             actual = entity_fingerprint({"text": target.read_text(encoding="utf-8")})
-            if actual != old_files[name]:
+            if actual != managed_fingerprints[name]:
                 raise ValueError(f"交付文件被手工修改，先合并回 JSON 或使用新目录：{target}")
     output.mkdir(parents=True, exist_ok=True)
     files = {}
     for name, text in documents.items():
         (output / name).write_text(text, encoding="utf-8", newline="\n")
         files[name] = entity_fingerprint({"text": text})
-    obsolete = sorted(set(old_files) - set(documents))
+    obsolete_candidates = set(old_files) | set(old_obsolete) | set(old_obsolete_fingerprints)
+    obsolete = sorted(name for name in obsolete_candidates - set(documents)
+                      if (output / name).exists())
+    obsolete_fingerprints = {name: managed_fingerprints[name] for name in obsolete
+                             if name in managed_fingerprints}
     manifest_path.write_text(json.dumps({
         "project_id": data["project"]["id"], "project_fingerprint": entity_fingerprint(data["project"]),
         "files": files, "obsolete_files": obsolete,
+        "obsolete_file_fingerprints": obsolete_fingerprints,
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return [output / name for name in documents], obsolete
 
