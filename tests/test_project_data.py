@@ -1,16 +1,21 @@
+from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
+import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
 from scripts.project_data import (
-    entity_fingerprint, load_project, parse_project, snapshot_dependencies, validate_project,
+    entity_fingerprint, find_stale_entities, load_project, main as project_data_main,
+    parse_project, parse_source_script, snapshot_dependencies, sync_shared_assets,
+    validate_project, validate_shared_assets, validate_source_script,
 )
 from scripts.qc_check import extract_prompt_blocks, scan_document
 from scripts.render_project import export_project, render_documents
 
 DEMO = Path(__file__).resolve().parents[1] / "examples" / "demo" / "project.json"
+PREPRODUCTION = Path(__file__).resolve().parents[1] / "examples" / "demo" / "preproduction.md"
 
 
 class ProjectDataTests(unittest.TestCase):
@@ -124,6 +129,124 @@ class ProjectDataTests(unittest.TestCase):
         self.assertEqual(entity_fingerprint(original), entity_fingerprint(changed))
         changed["duration"] += 1
         self.assertNotEqual(entity_fingerprint(original), entity_fingerprint(changed))
+
+    def test_duplicate_shot_design_emits_warning_while_demo_is_clean(self):
+        errors, warnings = validate_project(self.data)
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
+        copied = deepcopy(self.data)
+        copied["shots"][1]["design"] = deepcopy(copied["shots"][0]["design"])
+        rebuilt = snapshot_dependencies(copied)
+        errors, warnings = validate_project(rebuilt)
+        self.assertEqual(errors, [])
+        self.assertTrue(any("SHOT-002: 八岗位设计决策与 SHOT-001 完全相同" in w for w in warnings), warnings)
+
+    def test_source_script_validation_accepts_demo_preproduction_and_catches_drift(self):
+        source_text = PREPRODUCTION.read_text(encoding="utf-8")
+        errors, _ = validate_project(self.data, source_text=source_text)
+        self.assertEqual(errors, [])
+
+        with self.subTest("dialogue_text_drift"):
+            drifted_source = source_text.replace("门锁换过了。", "门锁怎么换了？")
+            self.assertTrue(any("台词内容" in e for e in validate_source_script(self.data, drifted_source)))
+
+        with self.subTest("extra_dialogue_line"):
+            extra_source = source_text + "\nE01-S01-D03：晚晴：里面有人。\n"
+            self.assertTrue(any("台词数量" in e for e in validate_source_script(self.data, extra_source)))
+
+        with self.subTest("broken_beat_shot_mapping"):
+            bad_mapping = source_text.replace("BEAT-LOCK→SHOT-001", "BEAT-LOCK→SHOT-002")
+            self.assertTrue(any("BEAT-LOCK→SHOT-002" in e for e in validate_source_script(self.data, bad_mapping)))
+
+        with self.subTest("source_ref_validation"):
+            anchored = deepcopy(self.data)
+            anchored["beats"][0]["source_ref"] = "E01-S01-A01"
+            anchored["dialogues"][0]["source_ref"] = "E01-S01-D01"
+            self.assertEqual(validate_source_script(anchored, source_text), [])
+            anchored["dialogues"][0]["source_ref"] = "E01-S01-D99"
+            self.assertTrue(any("E01-S01-D99" in e for e in validate_source_script(anchored, source_text)))
+
+    def test_standard_scene_script_format_is_parsed_and_verified(self):
+        standard_script = "\n".join([
+            "01-01  昏  阴  外  旧院门",
+            "",
+            "出场人物：晚晴",
+            "道具：铜钥匙",
+            "",
+            "△ 晚晴停在石阶上，面向入口右侧门扇，目光从门闩移向新锁。",
+            "晚晴（压低声音）：门锁换过了。",
+            "△ 她看向门框缝隙，抽出铜钥匙托在掌心。",
+            "晚晴：钥匙还在这里。",
+            "【音效：指尖碰到锁环，铜件轻响。】",
+        ])
+        parsed = parse_source_script(standard_script)
+        self.assertEqual(len(parsed["actions"]), 2)
+        self.assertEqual(len(parsed["dialogues"]), 2)
+        self.assertEqual(validate_source_script(self.data, standard_script), [])
+
+    def test_shared_assets_validation_and_sync_workflow(self):
+        shared = {
+            "characters": deepcopy(self.data["characters"]),
+            "scenes": deepcopy(self.data["scenes"]),
+            "props": deepcopy(self.data["props"]),
+            "prompts": [deepcopy(self.data["prompts"][0])],
+        }
+        self.assertEqual(validate_shared_assets(self.data, shared), [])
+
+        shared["characters"][0]["description"] += " 袖口绣有银线。"
+        shared["characters"][0]["revision"] += 1
+        drift_errors = validate_project(self.data, shared_assets=shared)[0]
+        self.assertTrue(any("CHAR-WANQING: 与共享资产库不一致" in e for e in drift_errors), drift_errors)
+
+        synced = sync_shared_assets(self.data, shared)
+        self.assertEqual(validate_shared_assets(synced, shared), [])
+        stale_ids = find_stale_entities(synced)
+        self.assertIn("SHOT-001", stale_ids)
+        self.assertIn("PROMPT-VIDEO-001", stale_ids)
+        recaptured = snapshot_dependencies(synced, stale_ids)
+        self.assertEqual(validate_project(recaptured, shared_assets=shared)[0], [])
+
+    def test_cli_capture_all_stale_inplace_sync_and_extract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temp_dir = Path(temporary)
+            draft_path = temp_dir / "draft.json"
+            draft = deepcopy(self.data)
+            for item in draft["shots"] + draft["prompts"]:
+                item["depends_on"] = []
+            draft_path.write_text(json.dumps(draft, ensure_ascii=False), encoding="utf-8")
+
+            captured_path = temp_dir / "captured.json"
+            with redirect_stdout(io.StringIO()):
+                status = project_data_main(["capture", str(draft_path), "--all", "--output", str(captured_path)])
+            self.assertEqual(status, 0)
+            self.assertEqual(validate_project(load_project(captured_path))[0], [])
+
+            shared_path = temp_dir / "shared.json"
+            shared = {"props": deepcopy(self.data["props"])}
+            shared["props"][0]["description"] += " 边缘微亮。"
+            shared["props"][0]["revision"] += 1
+            shared_path.write_text(json.dumps(shared, ensure_ascii=False), encoding="utf-8")
+
+            with redirect_stdout(io.StringIO()):
+                status = project_data_main(["sync-assets", str(captured_path), "--from", str(shared_path), "--in-place"])
+            self.assertEqual(status, 0)
+            self.assertEqual(find_stale_entities(load_project(captured_path)), ["PROMPT-BOARD-002", "PROMPT-VIDEO-002", "SHOT-002"])
+
+            with redirect_stdout(io.StringIO()):
+                status = project_data_main(["capture", str(captured_path), "--stale", "--in-place"])
+            self.assertEqual(status, 0)
+            self.assertEqual(validate_project(load_project(captured_path), shared_assets=shared)[0], [])
+
+            extracted_out = io.StringIO()
+            with redirect_stdout(extracted_out):
+                status = project_data_main(["extract-script", str(PREPRODUCTION)])
+            self.assertEqual(status, 0)
+            extracted = json.loads(extracted_out.getvalue())
+            self.assertEqual(len(extracted["dialogues"]), 2)
+
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as ctx:
+                project_data_main(["capture", str(captured_path), "--in-place"])
+            self.assertEqual(ctx.exception.code, 2)
 
 
 class ExportTests(unittest.TestCase):

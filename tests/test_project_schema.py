@@ -77,6 +77,16 @@ class ProjectSchemaTests(unittest.TestCase):
         data["shots"][0]["notes"] = ""
         self.assertEqual([], validate_shape(data))
 
+    def test_optional_source_ref_on_beats_and_dialogues(self):
+        data = copy.deepcopy(self.demo)
+        data["beats"][0]["source_ref"] = "E01-S01-A01"
+        data["beats"][1]["source_ref"] = None
+        data["dialogues"][0]["source_ref"] = "E01-S01-D01"
+        data["dialogues"][1]["source_ref"] = None
+        self.assertEqual([], validate_shape(data))
+        self.assert_shape_error(lambda d: d["beats"][0].update(source_ref="   "), "beats[0].source_ref")
+        self.assert_shape_error(lambda d: d["dialogues"][0].update(source_ref=123), "dialogues[0].source_ref")
+
 
 if __name__ == "__main__":
     unittest.main()

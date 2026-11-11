@@ -258,6 +258,13 @@
           },
           "minItems": 0,
           "uniqueItems": true
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "\\S"
         }
       },
       "required": [
@@ -301,6 +308,13 @@
         },
         "text": {
           "type": "string",
+          "pattern": "\\S"
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "\\S"
         }
       },

@@ -143,7 +143,7 @@ class PromptChecks(unittest.TestCase):
                 self.assertTrue(any("机制/管理标签" in error for error in errors), errors)
 
     def test_spoken_continuation_lines_keep_management_words(self):
-        for cue in ["林舟低声说", "OS", "NAR"]:
+        for cue in ["林舟低声说", "晚晴短句收尾", "轻声低语", "OS", "NAR"]:
             with self.subTest(cue=cue):
                 source = dynamic_text().replace('低声匀速说："别动。"', '\n' + cue + '：“你就是按模板做事的人。”')
                 self.assertFalse(qc.check(source, duration=10)[0])
@@ -197,6 +197,18 @@ class PromptChecks(unittest.TestCase):
     def test_color_storyboard_keeps_its_reference_style_scope(self):
         source = "@图片1 参考场景空间布局、色彩光影与画面风格。禁止继承构图、景别。\n生成彩色故事版。\n--ar 16:9"
         errors, _ = qc.check(source, mode="static", template="T6")
+        self.assertFalse(errors)
+
+    def test_static_scene_reference_conflict_checks_actual_overlap(self):
+        disjoint = "@图片1 参考场景空间布局与色彩光影。禁止继承画面风格。\n生成彩色故事版。\n--ar 16:9"
+        self.assertFalse(qc.check(disjoint, mode="static", template="T6")[0])
+        overlapping = "@图片1 参考场景空间布局与色彩光影。禁止继承色彩。\n生成彩色故事版。\n--ar 16:9"
+        errors, _ = qc.check(overlapping, mode="static", template="T6")
+        self.assertTrue(any("静态场景参考的继承项与禁止项冲突" in e for e in errors), errors)
+
+    def test_dynamic_scene_reference_allows_inline_exclusion_clause(self):
+        source = "@素材1 参考场景旧院门除色彩、光影外的空间布局。禁止继承画面风格、光影、色彩。\n" + dynamic_text()
+        errors, _ = qc.check(source, duration=10, template="T9")
         self.assertFalse(errors)
 
     def test_dynamic_scene_reference_keeps_its_inheritance_restrictions(self):
@@ -451,6 +463,21 @@ class CLIInputChecks(unittest.TestCase):
                 status = qc.main([str(Path(directory) / "missing.txt"), "--format", "json"])
             self.assertEqual(status, 1)
             self.assertTrue(json.loads(buffer.getvalue())["results"][0]["errors"])
+
+    def test_cli_source_and_shared_assets_flags(self):
+        demo_path = ROOT / "examples" / "demo" / "project.json"
+        preproduction_path = ROOT / "examples" / "demo" / "preproduction.md"
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            status = qc.main([
+                str(demo_path),
+                "--source", str(preproduction_path),
+                "--shared-assets", str(demo_path),
+                "--format", "json",
+            ])
+        output = json.loads(buffer.getvalue())
+        self.assertEqual(status, 0)
+        self.assertTrue(output["ok"])
 
 
 if __name__ == "__main__":

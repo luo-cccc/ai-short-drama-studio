@@ -25,7 +25,7 @@
 Python 3.10+，脚本与测试只依赖标准库。在仓库根目录运行：
 
 ~~~powershell
-python -B -X utf8 scripts/qc_check.py examples/demo/project.json --format json
+python -B -X utf8 scripts/qc_check.py examples/demo/project.json --source examples/demo/preproduction.md --format json
 python -B -X utf8 scripts/render_project.py examples/demo/project.json --output output/demo
 python -B -X utf8 scripts/qc_check.py output/demo --mode auto
 python -B -X utf8 -m unittest discover -s tests -v

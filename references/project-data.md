@@ -14,8 +14,8 @@
 | characters | CHAR- | `name`、`description`、`voice`；角色外观与声线 |
 | scenes | SCENE- | `name`、`description`；可复用场景 |
 | props | PROP- | `name`、`description`；可复用道具 |
-| beats | BEAT- | `scene_id`、`summary`、`character_ids`、`prop_ids`；按剧本顺序保存节拍 |
-| dialogues | LINE- | `beat_id`、`speaker_id`、`kind`、`text`；数组定义台词执行顺序 |
+| beats | BEAT- | `scene_id`、`summary`、`character_ids`、`prop_ids`，可选`source_ref`；按剧本顺序保存节拍 |
+| dialogues | LINE- | `beat_id`、`speaker_id`、`kind`、`text`，可选`source_ref`；数组定义台词执行顺序 |
 | shots | SHOT- | `title`、`function`、`scene_ids`、`character_ids`、`prop_ids`、`beat_ids`、`duration`、`segments`、`static_prompt_ids`、`dynamic_prompt_id`、`design`、`audio`、`transitions`、`review`、`notes`、`depends_on` |
 | prompts | PROMPT- | `template`、`shot_id`、`duration`、`asset_ids`、`reference_bindings`、`text`、`depends_on` |
 
@@ -33,7 +33,7 @@
 
 每个shot至少引用一条静态提示词，并通过`dynamic_prompt_id`引用唯一归属本镜的动态提示词。静态模板为T1–T6及T6B，动态模板为T7–T9。静态提示词的`shot_id`可为`null`供全局复用，或指向登记它的本镜；动态提示词须指向本镜、时长相同，且`asset_ids`包含本镜全部角色、场景和道具。
 
-`design`是由`role`、`knowledge`、`decision`组成的八项数组，`director`、`camera`、`lighting`、`action`、`staging`、`dialogue`、`sound`、`vfx`各出现一次。`audio`包含`ambience`、`music`和`effects`，`transitions`包含`incoming`和`outgoing`，`review`包含`design_id`和`status`；`design_id`使用`9B-`前缀。
+`design`是由`role`、`knowledge`、`decision`组成的八项数组，`director`、`camera`、`lighting`、`action`、`staging`、`dialogue`、`sound`、`vfx`各出现一次。不同分镜若完全复用相同的八岗位`decision`，QC会发出WARN提示差异化设计。`audio`包含`ambience`、`music`和`effects`，`transitions`包含`incoming`和`outgoing`，`review`包含`design_id`和`status`；`design_id`使用`9B-`前缀。
 
 ### 台词与局部时间
 
@@ -74,25 +74,32 @@ shots和prompts的`depends_on`保存直接依赖的`id`、`revision`和SHA-256 `
 
 ### capture：显式记录已完成内容的依赖
 
-首次建立完整数据时，可先将每条shot和prompt的`depends_on`写为`[]`，其他字段仍须完整，然后捕获全部shot和prompt。CLI必须至少传一次`--entity`，重复此参数选择多个实体，没有省略参数即全选的模式。PowerShell可从JSON收集全部ID：
+首次建立完整数据时，可先将每条shot和prompt的`depends_on`写为`[]`，其他字段仍须完整，然后使用`--all`一次性捕获全部shot和prompt（支持`--output`输出新文件或`--in-place`/`-i`原地更新）：
 
 ~~~powershell
-$project = Get-Content -Raw -Encoding utf8 project.draft.json | ConvertFrom-Json
-$captureArgs = @()
-foreach ($entity in (@($project.shots) + @($project.prompts))) {
-    $captureArgs += @('--entity', $entity.id)
-}
-python -B -X utf8 scripts/project_data.py capture project.draft.json @captureArgs --output project.captured.json
+python -B -X utf8 scripts/project_data.py capture project.draft.json --all --output project.captured.json
 python -B -X utf8 scripts/qc_check.py project.captured.json
 ~~~
 
-后续修改先增版上游实体并重做受影响内容，再选择已完成的分镜与提示词。例如：
+后续修改先增版上游实体并重做受影响内容，再用`--stale`自动捕获所有缺少快照或依赖已失效的实体，或用`--entity`显式指定已完成的分镜与提示词：
 
 ~~~powershell
+python -B -X utf8 scripts/project_data.py capture project.json --stale --in-place
 python -B -X utf8 scripts/project_data.py capture project.json --entity SHOT-001 --entity PROMPT-BOARD-001 --entity PROMPT-VIDEO-001 --output output/project.updated.json
 ~~~
 
-capture输出完整项目副本，只刷新所选实体的快照。它检查字段形状和所选实体的依赖，不执行完整项目QC，不改写创作内容或revision，也不会自动选入其他实体。若所选提示词仍依赖已失效的分镜或静态提示词，须先完成上游修改并将相应实体一并选入。`--output`必须是不存在的新文件，可自动创建父目录；完成后对输出文件运行QC。
+`--entity`、`--all`与`--stale`三选一。capture检查字段形状和所选实体的依赖，不执行完整项目QC，不改写创作内容或revision；使用`--entity`时若所选提示词仍依赖已失效的分镜或静态提示词，须先完成上游修改并将相应实体一并选入（或改用`--stale`）。`--output`必须是不存在的新文件，可自动创建父目录；`--in-place`（`-i`）直接写回原文件。完成后运行QC验证。
+
+### sync-assets与extract-script：跨集资产同步与源剧本提取
+
+多集项目可将公共`characters`、`scenes`、`props`及全局静态`prompts`（`shot_id: null`）保存在共享资产JSON或主集`project.json`中，同步到分集项目：
+
+~~~powershell
+python -B -X utf8 scripts/project_data.py sync-assets ep02/project.json --from shared/assets.json --in-place
+python -B -X utf8 scripts/project_data.py extract-script examples/demo/preproduction.md
+~~~
+
+`sync-assets`默认更新当前项目已引用的同名ID资产；加`--include-new`可一并并入尚未收录的新共享资产。同步后受影响的分镜与提示词依赖快照会自动失配，随后重做受影响内容并执行`capture --stale`。`extract-script`从源剧本或前期交接Markdown中解析动作节拍、台词和交接映射骨架。
 
 ### --previous：与同一项目的基线比较
 
@@ -119,6 +126,8 @@ python -B -X utf8 scripts/qc_check.py prompt.txt --mode dynamic --duration 10
 | `--mode auto/static/dynamic` | 用于文本；auto优先采用块template，再结合标题、代码块语言和正文判断 |
 | `--duration 10` | 文本动态块的规定时长，须为5–30秒的有限数值；覆盖块元数据，并与任务声明和镜头终点对账 |
 | `--previous 文件` | 仅用于项目JSON，执行上节的基线比较 |
+| `--source 文件` | 仅用于项目JSON，校验源剧本或交接Markdown的台词、说话人、顺序、`source_ref`及交接表映射 |
+| `--shared-assets 文件` | 仅用于项目JSON，校验公共角色、场景、道具及全局静态提示词与共享资产库同步 |
 | `--format text/json` | 默认为可读文本；JSON输出包含`ok`、`checked`、`skipped`、`results` |
 
 从文件演示stdin项目输入时，PowerShell可调用cmd的输入重定向：

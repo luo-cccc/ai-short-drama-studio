@@ -57,7 +57,10 @@ def _management_body(text: str, mode: str) -> str:
     """豁免镜头行对白与有说话/OS/NAR引导的续行，说明中的引号仍受检。"""
     if mode != "dynamic":
         return text
-    spoken = re.compile(r'(?:说|问|答|喊|念|道|OS|NAR|旁白|独白|画外音|台词)[：:][ \t]*$', re.I)
+    spoken = re.compile(
+        r'(?:说|问|答|喊|念|道|开口|收尾|低语|轻声|沉声|冷笑|叹息|耳语|吟诵|喝|吼|喃喃|OS|NAR|旁白|独白|画外音|台词)[：:][ \t]*$',
+        re.I,
+    )
     line_states, in_shot = {}, False
     for row in re.finditer(r"(?m)^([^\n]*)", text):
         line = row.group(1)
@@ -104,9 +107,10 @@ def _reference_declarations(text: str) -> list[tuple[str, str]]:
 
 def _reference_scope(declaration: str) -> tuple[bool, str, set[str]]:
     """按声明主语识别场景参考，分离正向描述与明确禁止项。"""
-    positive, excluded = [], set()
+    positive, raw_positive, excluded = [], [], set()
     negative_start = re.compile(r"^(?:禁止\s*继承|不取|不继承|不参考|不包含|不采纳|禁止参考|排除|不使用)")
     positive_start = re.compile(r"^(?:(?:并|同时|继续)?(?:继承|参考|采用|沿用|保留|只取|取)|但|却|然而|仍)")
+    inline_exclusion = re.compile(r"除[^，。；;\n]*?(?:之外|以外|外)")
     for sentence in re.split(r"[。！？!?\n]", declaration):
         scope = "positive"
         for clause in re.split(r"[，；;]", sentence):
@@ -120,8 +124,9 @@ def _reference_scope(declaration: str) -> tuple[bool, str, set[str]]:
             if scope == "excluded":
                 excluded.update(word for word in ("画面风格", "光影", "色彩") if word in clause)
             elif scope == "positive":
-                positive.append(clause)
-    subject = re.search(r"故事分镜图|故事板|调度图|场景|角色|人物|道具", positive[0] if positive else "")
+                raw_positive.append(clause)
+                positive.append(inline_exclusion.sub("", clause))
+    subject = re.search(r"故事分镜图|故事板|调度图|场景|角色|人物|道具", raw_positive[0] if raw_positive else "")
     scene = bool(subject and subject.group() in {"场景", "故事板", "故事分镜图", "调度图"})
     return scene, "，".join(positive), excluded
 
@@ -263,7 +268,8 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
                     errors.append(f"{slot}动态场景/故事板参考缺少禁止继承画面风格、光影、色彩")
                 if any(word in ref_what for word in ("画面风格", "光影", "色彩")):
                     errors.append(f"{slot}动态场景/故事板参考不能正向继承画面风格、光影、色彩")
-            if mode == "static" and template != "T6B" and any(word in ref_what for word in ["画面风格", "色彩光影", "材质光影"]) and excluded:
+            inherited = {word for word in ("画面风格", "光影", "色彩") if word in ref_what}
+            if mode == "static" and template != "T6B" and (inherited & excluded):
                 errors.append(f"{slot}静态场景参考的继承项与禁止项冲突")
     visual_body = re.sub(r'“[^”]*”|"[^"\n]*"', "", body)
     for pattern in PHYSICAL_UNITS:
@@ -414,13 +420,25 @@ def scan_file(path: str, mode: str = "auto", duration: float | None = None) -> t
     return path, [f"块{r['block']}：{e}" for r in results for e in r["errors"]], [f"块{r['block']}：{w}" for r in results for w in r["warnings"]]
 
 
-def check_project(data: dict, previous: dict | None = None, path: str = "<project>") -> list[dict]:
+def check_project(
+    data: dict,
+    previous: dict | None = None,
+    path: str = "<project>",
+    *,
+    source_text: str | None = None,
+    shared_assets: dict | None = None,
+) -> list[dict]:
     try:
         from .project_data import normalize_dialogue, validate_project, validate_shape
     except ImportError:
         from project_data import normalize_dialogue, validate_project, validate_shape
 
-    errors, warns = validate_project(data, previous=previous)
+    extra_kwargs = {}
+    if source_text is not None:
+        extra_kwargs["source_text"] = source_text
+    if shared_assets is not None:
+        extra_kwargs["shared_assets"] = shared_assets
+    errors, warns = validate_project(data, previous=previous, **extra_kwargs)
     results = [{"path": path, "block": None, "mode": "project", "errors": list(errors), "warnings": list(warns), "skipped": False}]
     if not isinstance(data, dict) or validate_shape(data):
         return results
@@ -464,15 +482,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration", type=float, default=None, help="显式覆盖动态提示词的规定时长")
     parser.add_argument("--project", action="store_true", help="将输入作为project.json检查")
     parser.add_argument("--previous", help="历史project.json，用于修改与版本追溯检查")
+    parser.add_argument("--source", help="源剧本或前期交接Markdown，用于校验源稿与JSON台词及映射一致")
+    parser.add_argument("--shared-assets", dest="shared_assets", help="跨集共享资产JSON，用于校验公共角色/场景/道具与全局提示词同步")
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
     if args.duration is not None and (not Decimal(str(args.duration)).is_finite() or not 5 <= args.duration <= 30):
         parser.error("--duration须为5–30秒范围内的有限数值")
-    if args.previous and not (args.project or (args.target and Path(args.target).suffix.lower() == ".json")):
-        parser.error("--previous仅用于JSON项目输入")
+    is_project = args.project or bool(args.target and Path(args.target).suffix.lower() == ".json")
+    if (args.previous or args.source or args.shared_assets) and not is_project:
+        parser.error("--previous、--source 与 --shared-assets 仅用于JSON项目输入")
     results = []
     try:
-        is_project = args.project or bool(args.target and Path(args.target).suffix.lower() == ".json")
         if is_project:
             try:
                 from .project_data import load_project, parse_project
@@ -480,7 +500,15 @@ def main(argv: list[str] | None = None) -> int:
                 from project_data import load_project, parse_project
             data = load_project(args.target) if args.target else parse_project(sys.stdin.read())
             previous = load_project(args.previous) if args.previous else None
-            results = check_project(data, previous, args.target or "<stdin>")
+            source_text = Path(args.source).read_text(encoding="utf-8-sig") if args.source else None
+            shared_assets = load_project(args.shared_assets) if args.shared_assets else None
+            results = check_project(
+                data,
+                previous,
+                args.target or "<stdin>",
+                source_text=source_text,
+                shared_assets=shared_assets,
+            )
         elif args.target and Path(args.target).is_dir():
             paths = sorted(p for p in Path(args.target).rglob("*") if p.is_file() and p.suffix.lower() in {".md", ".txt"} and p.name != "SKILL.md")
             for path in paths:

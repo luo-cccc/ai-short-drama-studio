@@ -140,6 +140,297 @@ def entity_index(data):
     return {entity["id"]: entity for entity in entities}
 
 
+NON_SPEAKER_LABELS = {
+    "出场人物", "人物", "角色", "可操作道具", "道具", "场景", "地点", "时间", "日夜", "内外",
+    "音效", "音乐", "BGM", "环境音", "字幕", "花字", "画内文字", "备注", "说明", "注意",
+    "提示", "总结", "结论", "建议", "问题", "证据", "判断", "未验证项", "主方向", "视觉形态",
+    "叙事路线", "局部变化", "制作计划", "声音", "核心梗", "一句话卖点", "故事梗概",
+}
+
+
+def _parse_dialogue_clause(text, source_ref=None):
+    match = re.match(
+        r"^([\u4e00-\u9fffA-Za-z0-9_·]{1,20}?)(?:[（(]([^）)\n]{1,40})[）)])?[：:]\s*(.+)$",
+        text.strip(),
+    )
+    if not match:
+        return None
+    speaker, modifier, utterance = match.groups()
+    speaker = speaker.strip()
+    modifier = (modifier or "").strip()
+    utterance = utterance.strip()
+    if not utterance or speaker in NON_SPEAKER_LABELS:
+        return None
+    if speaker in {"旁白", "NAR", "画外音", "叙述者"} or re.search(r"\bNAR\b|旁白|画外音", modifier, re.I):
+        kind, speaker_name = "narration", None
+    elif speaker.upper() == "OS" or re.search(r"\bOS\b|内心独白|独白|心声", modifier, re.I):
+        kind = "os"
+        speaker_name = modifier if speaker.upper() == "OS" and modifier else speaker
+    else:
+        kind, speaker_name = "dialogue", speaker
+    return {
+        "source_ref": source_ref,
+        "speaker": speaker_name,
+        "modifier": modifier or None,
+        "kind": kind,
+        "text": utterance,
+    }
+
+
+def parse_source_script(text, known_speakers=None):
+    """Parse anchored handoff markdown or standard scene script into actions, dialogues, and mappings."""
+    anchors, short_counts, short_map = {}, Counter(), {}
+    actions, dialogues = [], []
+    beat_shot_mappings, ref_line_mappings = [], []
+    referenced_ids = set()
+    speakers = set(known_speakers or ()) | {"旁白", "NAR", "画外音", "叙述者", "OS"}
+    in_ignored_fence = False
+    fence_marker = None
+    saw_action_in_section = False
+
+    for raw_line in text.lstrip("\ufeff").splitlines():
+        trimmed = raw_line.strip()
+        fence_match = re.match(r"^(`{3,}|~{3,})\s*([^\s]*)", trimmed)
+        if fence_match:
+            marker, lang = fence_match.group(1), fence_match.group(2).lower()
+            if not in_ignored_fence and fence_marker is None:
+                fence_marker = marker[0]
+                in_ignored_fence = lang in {"json", "python", "powershell", "bash", "sh", "cmd", "yaml"}
+            elif trimmed.startswith(fence_marker * 3):
+                in_ignored_fence = False
+                fence_marker = None
+            continue
+        if in_ignored_fence:
+            continue
+
+        for beat_id, shot_id in re.findall(r"\b(BEAT-[A-Za-z0-9_-]+)\s*(?:→|->)\s*(SHOT-[A-Za-z0-9_-]+)", raw_line):
+            beat_shot_mappings.append((beat_id, shot_id))
+        for ref_id, line_id in re.findall(r"\b([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s*(?:→|->)\s*(LINE-[A-Za-z0-9_-]+)", raw_line):
+            if not ref_id.startswith(("BEAT-", "SHOT-", "CHAR-", "SCENE-", "PROP-", "PROMPT-", "PRJ-")):
+                ref_line_mappings.append((ref_id, line_id))
+        referenced_ids.update(
+            re.findall(r"\b(?:PRJ|CHAR|SCENE|PROP|BEAT|LINE|SHOT|PROMPT)-[A-Za-z0-9][A-Za-z0-9_-]*", raw_line)
+        )
+
+        if not trimmed or trimmed.startswith(("#", "|", "- ", "* ", "+ ", "> ", "<!--", "---")):
+            if trimmed.startswith("#"):
+                saw_action_in_section = False
+            continue
+        if re.match(r"^\d+\.\s", trimmed) or re.match(r"^\d{2}-\d{2}\s+", trimmed):
+            continue
+
+        cast_match = re.match(r"^出场人物[：:]\s*(.+)$", trimmed)
+        if cast_match:
+            for item in re.split(r"[、，,；;。\s]+", cast_match.group(1)):
+                if item:
+                    speakers.add(item.strip())
+            continue
+
+        anchor_match = re.match(r"^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)[：:]\s*(.+)$", trimmed)
+        if anchor_match:
+            anchor_id, body = anchor_match.group(1), anchor_match.group(2).strip()
+            short_key = anchor_id.rsplit("-", 1)[-1]
+            short_counts[short_key] += 1
+            short_map[short_key] = anchor_id
+            if body.startswith(("△", "▲")):
+                action_text = body.lstrip("△▲ \t").strip()
+                record = {"id": anchor_id, "kind": "action", "text": action_text}
+                anchors[anchor_id] = record
+                actions.append({"source_ref": anchor_id, "text": action_text})
+                saw_action_in_section = True
+            elif body.startswith(("【", "[")):
+                anchors[anchor_id] = {"id": anchor_id, "kind": "sound", "text": body}
+            else:
+                parsed_line = _parse_dialogue_clause(body, source_ref=anchor_id)
+                if parsed_line:
+                    anchors[anchor_id] = {"id": anchor_id, **parsed_line}
+                    dialogues.append(parsed_line)
+                else:
+                    anchors[anchor_id] = {"id": anchor_id, "kind": "other", "text": body}
+            continue
+
+        if trimmed.startswith(("△", "▲")):
+            action_text = trimmed.lstrip("△▲ \t").strip()
+            if action_text:
+                actions.append({"source_ref": None, "text": action_text})
+                saw_action_in_section = True
+            continue
+        if trimmed.startswith(("【", "[")):
+            continue
+
+        parsed_line = _parse_dialogue_clause(trimmed, source_ref=None)
+        if parsed_line and (
+            parsed_line["speaker"] in speakers
+            or parsed_line["speaker"] is None
+            or parsed_line["modifier"] is not None
+            or saw_action_in_section
+        ):
+            dialogues.append(parsed_line)
+
+    for short_key, count in short_counts.items():
+        if count == 1 and short_key not in anchors:
+            anchors[short_key] = anchors[short_map[short_key]]
+
+    return {
+        "anchors": anchors,
+        "actions": actions,
+        "dialogues": dialogues,
+        "beat_shot_mappings": beat_shot_mappings,
+        "ref_line_mappings": ref_line_mappings,
+        "referenced_ids": referenced_ids,
+    }
+
+
+def validate_source_script(data, source_text):
+    """Cross-check project.json against source script or preproduction handoff markdown."""
+    errors = []
+    index = entity_index(data)
+    groups = {name: {entity["id"]: entity for entity in data[name]} for name in COLLECTIONS}
+    known_speakers = {char["name"] for char in data["characters"]}
+    parsed = parse_source_script(source_text, known_speakers=known_speakers)
+    anchors = parsed["anchors"]
+
+    for ref_id in sorted(parsed["referenced_ids"]):
+        if ref_id not in index:
+            errors.append(f"源文档引用了不存在的实体 ID：{ref_id}")
+
+    for beat_id, shot_id in parsed["beat_shot_mappings"]:
+        shot = groups["shots"].get(shot_id)
+        if shot and beat_id not in shot["beat_ids"]:
+            errors.append(f"源文档交接映射 {beat_id}→{shot_id} 与分镜实际认领的 beat_ids 不一致")
+
+    for ref_id, line_id in parsed["ref_line_mappings"]:
+        line = groups["dialogues"].get(line_id)
+        anchor = anchors.get(ref_id)
+        if anchor is None:
+            errors.append(f"源文档台词映射 {ref_id}→{line_id} 中的源定位 {ref_id} 未找到")
+        elif line and normalize_dialogue(anchor.get("text", "")) != normalize_dialogue(line["text"]):
+            errors.append(f"{line_id}: 源定位 {ref_id} 台词内容与 JSON 不一致")
+
+    for beat in data["beats"]:
+        source_ref = beat.get("source_ref")
+        if source_ref:
+            for token in (part.strip() for part in re.split(r"[、，,;；\s]+", source_ref) if part.strip()):
+                if token not in anchors:
+                    errors.append(f"{beat['id']}: source_ref {token} 未在源剧本中找到")
+
+    for line in data["dialogues"]:
+        source_ref = line.get("source_ref")
+        if source_ref:
+            anchor = anchors.get(source_ref.strip())
+            if anchor is None:
+                errors.append(f"{line['id']}: source_ref {source_ref} 未在源剧本中找到")
+            elif normalize_dialogue(anchor.get("text", "")) != normalize_dialogue(line["text"]):
+                errors.append(f"{line['id']}: source_ref {source_ref} 的源剧本台词与 JSON 不一致")
+
+    source_dialogues = parsed["dialogues"]
+    if len(source_dialogues) != len(data["dialogues"]):
+        errors.append(
+            f"源剧本台词数量（{len(source_dialogues)}）与 project.json dialogues 数量（{len(data['dialogues'])}）不一致"
+        )
+    for idx, (src, dst) in enumerate(zip(source_dialogues, data["dialogues"]), 1):
+        expected_speaker = groups["characters"][dst["speaker_id"]]["name"] if dst["speaker_id"] else None
+        if src["kind"] != dst["kind"]:
+            errors.append(f"{dst['id']}: 台词类型与源剧本第{idx}句不一致（源稿：{src['kind']}，JSON：{dst['kind']}）")
+        if src["speaker"] != expected_speaker:
+            errors.append(
+                f"{dst['id']}: 说话角色与源剧本第{idx}句不一致（源稿：{src['speaker'] or '旁白'}，JSON：{expected_speaker or '旁白'}）"
+            )
+        if normalize_dialogue(src["text"]) != normalize_dialogue(dst["text"]):
+            errors.append(
+                f"{dst['id']}: 台词内容与源剧本第{idx}句不一致（源稿：「{src['text']}」，JSON：「{dst['text']}」）"
+            )
+    return errors
+
+
+def _validate_shared_shape(shared):
+    if not isinstance(shared, dict):
+        return ["共享资产数据顶层必须为 JSON 对象"]
+    schema = load_project(SCHEMA_PATH)
+    errors = []
+    for name, def_name in (("characters", "character"), ("scenes", "scene"), ("props", "prop"), ("prompts", "prompt")):
+        if name not in shared:
+            continue
+        if not isinstance(shared[name], list):
+            errors.append(f"shared.{name}: 类型应为 array")
+            continue
+        item_schema = schema["$defs"][def_name]
+        for index, item in enumerate(shared[name]):
+            errors.extend(_shape_errors(item, item_schema, schema, f"shared.{name}[{index}]"))
+    return errors
+
+
+def validate_shared_assets(data, shared):
+    """Validate that episode assets and global prompts match a series-level shared assets registry."""
+    shape_errors = _validate_shared_shape(shared)
+    if shape_errors:
+        return [f"共享资产库非法：{err}" for err in shape_errors]
+    errors = []
+    for collection in ("characters", "scenes", "props"):
+        shared_map = {item["id"]: item for item in shared.get(collection, [])}
+        for entity in data.get(collection, []):
+            target = shared_map.get(entity["id"])
+            if target is None:
+                continue
+            if (entity["revision"] != target["revision"]
+                    or entity_fingerprint(entity) != entity_fingerprint(target)):
+                errors.append(
+                    f"{entity['id']}: 与共享资产库不一致（共享库 revision={target['revision']}，当前 revision={entity['revision']}），请同步共享资产并更新受影响分镜"
+                )
+    shared_prompts = {
+        item["id"]: item for item in shared.get("prompts", []) if item.get("shot_id") is None
+    }
+    for prompt in data.get("prompts", []):
+        if prompt.get("shot_id") is not None:
+            continue
+        target = shared_prompts.get(prompt["id"])
+        if target is None:
+            continue
+        if (prompt["revision"] != target["revision"]
+                or entity_fingerprint(prompt) != entity_fingerprint(target)):
+            errors.append(
+                f"{prompt['id']}: 全局静态提示词与共享资产库不一致（共享库 revision={target['revision']}，当前 revision={prompt['revision']}）"
+            )
+    return errors
+
+
+def sync_shared_assets(data, shared, include_new=False):
+    """Synchronize shared characters, scenes, props, and global static prompts into a project."""
+    shape_errors = validate_shape(data)
+    if shape_errors:
+        raise ValueError("\n".join(shape_errors))
+    shared_errors = _validate_shared_shape(shared)
+    if shared_errors:
+        raise ValueError("\n".join(shared_errors))
+    result = deepcopy(data)
+    for collection in ("characters", "scenes", "props"):
+        shared_items = shared.get(collection, [])
+        shared_map = {item["id"]: deepcopy(item) for item in shared_items}
+        existing_ids = set()
+        for index, entity in enumerate(result[collection]):
+            existing_ids.add(entity["id"])
+            if entity["id"] in shared_map:
+                result[collection][index] = deepcopy(shared_map[entity["id"]])
+        if include_new:
+            for item in shared_items:
+                if item["id"] not in existing_ids:
+                    result[collection].append(deepcopy(item))
+    shared_prompts = [item for item in shared.get("prompts", []) if item.get("shot_id") is None]
+    shared_prompt_map = {item["id"]: deepcopy(item) for item in shared_prompts}
+    existing_prompt_ids = set()
+    for index, prompt in enumerate(result["prompts"]):
+        existing_prompt_ids.add(prompt["id"])
+        if prompt.get("shot_id") is None and prompt["id"] in shared_prompt_map:
+            updated = deepcopy(shared_prompt_map[prompt["id"]])
+            updated["depends_on"] = deepcopy(prompt["depends_on"])
+            result["prompts"][index] = updated
+    if include_new:
+        for item in shared_prompts:
+            if item["id"] not in existing_prompt_ids:
+                result["prompts"].append(deepcopy(item))
+    return result
+
+
 def required_dependencies(data, entity):
     dependencies = {data["project"]["id"]}
     if entity["id"].startswith("SHOT-"):
@@ -157,7 +448,7 @@ def required_dependencies(data, entity):
     return dependencies
 
 
-def _dependency_errors(data, index):
+def _collect_dependency_state(data, index):
     derived = data["shots"] + data["prompts"]
     graph = {entity["id"]: required_dependencies(data, entity) for entity in derived}
     errors, stale = [], set()
@@ -209,7 +500,19 @@ def _dependency_errors(data, index):
         upstream = sorted(graph.get(node, set()) & stale)
         if upstream:
             errors.append(f"{node}: 上游已失效 {', '.join(upstream)}")
-    return errors
+    return errors, sorted(stale)
+
+
+def _dependency_errors(data, index):
+    return _collect_dependency_state(data, index)[0]
+
+
+def find_stale_entities(data):
+    """Return sorted IDs of shots and prompts whose dependency snapshots are missing or stale."""
+    shape_errors = validate_shape(data)
+    if shape_errors:
+        raise ValueError("\n".join(shape_errors))
+    return _collect_dependency_state(data, entity_index(data))[1]
 
 
 def _baseline_errors(data, previous):
@@ -234,7 +537,7 @@ def _baseline_errors(data, previous):
     return errors
 
 
-def validate_project(data, previous=None):
+def validate_project(data, previous=None, *, source_text=None, shared_assets=None):
     errors, warnings = validate_shape(data), []
     if errors:
         return errors, warnings
@@ -269,6 +572,7 @@ def validate_project(data, previous=None):
 
     covered, spoken, dialogue_order = set(), [], []
     dynamic_owners = Counter()
+    seen_designs = {}
     for shot in data["shots"]:
         shot_id = shot["id"]
         for field, group in (("scene_ids", "scenes"), ("character_ids", "characters"),
@@ -289,6 +593,17 @@ def validate_project(data, previous=None):
         roles = Counter(design["role"] for design in shot["design"])
         if set(roles) != set(DESIGN_ROLES) or any(count != 1 for count in roles.values()):
             errors.append(f"{shot_id}: design 必须包含八个不同岗位")
+        else:
+            design_signature = tuple(
+                (item["role"], item["decision"].strip())
+                for item in sorted(shot["design"], key=lambda item: item["role"])
+            )
+            if design_signature in seen_designs:
+                warnings.append(
+                    f"{shot_id}: 八岗位设计决策与 {seen_designs[design_signature]} 完全相同，请结合本镜动作与叙事差异化设计"
+                )
+            else:
+                seen_designs[design_signature] = shot_id
         last_end = Decimal("0")
         for number, segment in enumerate(shot["segments"], 1):
             start, end = Decimal(str(segment["start"])), Decimal(str(segment["end"]))
@@ -388,6 +703,10 @@ def validate_project(data, previous=None):
     errors.extend(_dependency_errors(data, index))
     if previous is not None:
         errors.extend(_baseline_errors(data, previous))
+    if source_text is not None:
+        errors.extend(validate_source_script(data, source_text))
+    if shared_assets is not None:
+        errors.extend(validate_shared_assets(data, shared_assets))
     return errors, warnings
 
 
@@ -437,23 +756,92 @@ def snapshot_dependencies(data, entity_ids=None):
     return result
 
 
+def _write_json(data, target_path, in_place=False):
+    output = Path(target_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    mode = "w" if in_place else "x"
+    with output.open(mode, encoding="utf-8", newline="\n") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2, allow_nan=False)
+        handle.write("\n")
+    return output
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+
     capture_parser = sub.add_parser("capture", help="显式记录已重做实体的当前依赖")
     capture_parser.add_argument("project")
-    capture_parser.add_argument("--entity", action="append", required=True)
-    capture_parser.add_argument("--output", required=True)
+    capture_parser.add_argument("--entity", action="append", help="指定已重做的 SHOT-* 或 PROMPT-* ID（可多次传入）")
+    capture_parser.add_argument("--all", action="store_true", help="捕获全部衍生分镜与提示词的依赖快照")
+    capture_parser.add_argument("--stale", action="store_true", help="自动识别并捕获当前缺少快照或依赖已失效的分镜与提示词")
+    capture_out = capture_parser.add_mutually_exclusive_group(required=True)
+    capture_out.add_argument("--output", help="输出新文件路径（不得覆盖已有文件）")
+    capture_out.add_argument("-i", "--in-place", action="store_true", help="原地更新输入 JSON 文件")
+
+    sync_parser = sub.add_parser("sync-assets", help="从共享资产库或上游项目同步角色、场景、道具及全局静态提示词")
+    sync_parser.add_argument("project")
+    sync_parser.add_argument("--from", dest="shared", required=True, help="共享资产 JSON 或上游 project.json")
+    sync_parser.add_argument("--include-new", action="store_true", help="同时并入当前项目尚未收录的新共享资产")
+    sync_out = sync_parser.add_mutually_exclusive_group(required=True)
+    sync_out.add_argument("--output", help="输出新文件路径（不得覆盖已有文件）")
+    sync_out.add_argument("-i", "--in-place", action="store_true", help="原地更新输入 JSON 文件")
+
+    extract_parser = sub.add_parser("extract-script", help="从源剧本或前期交接 Markdown 提取动作与台词结构")
+    extract_parser.add_argument("source", help="源剧本或交接 Markdown 文件路径")
+    extract_parser.add_argument("--output", help="可选输出 JSON 文件路径（缺省打印到 stdout）")
+
     args = parser.parse_args(argv)
+    if args.command == "capture":
+        choices = bool(args.entity) + bool(args.all) + bool(args.stale)
+        if choices == 0:
+            capture_parser.error("必须指定 --entity、--all 或 --stale 之一")
+        if choices > 1:
+            capture_parser.error("--entity、--all 与 --stale 不能同时使用")
     try:
-        data = snapshot_dependencies(load_project(args.project), args.entity)
-        output = Path(args.output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with output.open("x", encoding="utf-8", newline="\n") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2, allow_nan=False)
-            handle.write("\n")
-        print(f"已记录依赖：{output}")
-        return 0
+        if args.command == "capture":
+            raw = load_project(args.project)
+            if args.all:
+                selected = None
+            elif args.stale:
+                selected = find_stale_entities(raw)
+            else:
+                selected = args.entity
+            data = snapshot_dependencies(raw, selected)
+            target = args.project if args.in_place else args.output
+            output = _write_json(data, target, in_place=args.in_place)
+            print(f"已记录依赖：{output}")
+            return 0
+        if args.command == "sync-assets":
+            raw = load_project(args.project)
+            shared = load_project(args.shared)
+            data = sync_shared_assets(raw, shared, include_new=args.include_new)
+            target = args.project if args.in_place else args.output
+            output = _write_json(data, target, in_place=args.in_place)
+            print(f"已同步共享资产：{output}")
+            return 0
+        if args.command == "extract-script":
+            source_text = Path(args.source).read_text(encoding="utf-8-sig")
+            parsed = parse_source_script(source_text)
+            payload = {
+                "actions": parsed["actions"],
+                "dialogues": parsed["dialogues"],
+                "beat_shot_mappings": [
+                    {"beat_id": beat_id, "shot_id": shot_id}
+                    for beat_id, shot_id in parsed["beat_shot_mappings"]
+                ],
+                "ref_line_mappings": [
+                    {"source_ref": ref_id, "dialogue_id": line_id}
+                    for ref_id, line_id in parsed["ref_line_mappings"]
+                ],
+            }
+            if args.output:
+                output = _write_json(payload, args.output, in_place=False)
+                print(f"已提取源剧本骨架：{output}")
+            else:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        return 2
     except (OSError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
