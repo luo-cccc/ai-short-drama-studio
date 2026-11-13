@@ -1,36 +1,37 @@
 # AI短剧制作技能包
 
-用于中文短剧的故事开发、剧本写作、分镜和静动态提示词制作，并提供项目JSON校验、Markdown导出及参考图切分工具。图片、声音和视频由外部工具生成；本仓库不接入媒体生成API，也不剪辑成片。
+用于中文短剧的故事开发、剧本写作、八岗位分镜和静动态提示词制作，提供项目JSON校验、依赖快照同步、Markdown文档导出及参考图切分脚本。
 
-## 内容结构
+## 仓库结构
 
-| 位置 | 内容 |
+| 路径 | 说明 |
 |---|---|
-| [SKILL.md](SKILL.md) | Agent任务入口与模块路由 |
-| [sd-story-development/](sd-story-development/SKILL.md) | 选题、故事优化、导演风格与剧本审阅 |
-| [sd-scriptwriter/](sd-scriptwriter/SKILL.md) | 梗概、人物、大纲与中文场景剧本 |
-| [sd-storyboard/](sd-storyboard/SKILL.md) | 资产节拍、八岗位设计、镜头与声音规划 |
-| [sd-static-assets/](sd-static-assets/SKILL.md) | T1–T6/6B/6C角色、道具、场景、故事板、单帧首尾帧及跨状态变体提示词 |
-| [sd-dynamic-video/](sd-dynamic-video/SKILL.md) | T7–T9视频提示词、防串脸与角色声音参考绑定 |
-| [references/](references/production-workflow.md) | 共用制作规则、数据契约、跨镜一致性与工具说明 |
-| [schemas/project.schema.json](schemas/project.schema.json) | 制作项目JSON字段契约，支持1.0及1.1 |
-| [scripts/](scripts/) | 数据快照与同步、视觉/声音/骨相QC、文档导出、物理切图 |
-| [examples/demo/](examples/demo/project.json) | 《院门线索》两段各5秒的完整数据与源稿交接 |
-| [examples/voice-reference/](examples/voice-reference/README.md) | 1.1声音参考规划；声音为待制作状态 |
-| [tests/](tests/) | 数据、提示词、跨状态一致性、声音参考、切图和导出回归测试 |
+| `SKILL.md` | 顶层任务入口与模块路由 |
+| `_meta.json` | 技能包元数据与版本信息 |
+| `schemas/project.schema.json` | 项目JSON Schema（支持`1.0`与`1.1`） |
+| `scripts/project_data.py` | 源剧本提取、草稿骨架生成、共享资产同步、依赖快照捕获与项目校验 |
+| `scripts/qc_check.py` | 项目JSON与Markdown/纯文本提示词质量检查 |
+| `scripts/render_project.py` | 校验并导出`project.md`、逐镜`SHOT-ID_分镜.md`及`.drama-export.json` |
+| `scripts/slice_grid.py` | T5空间九视角、T6/T6B九宫格故事板及T1角色设定图无损切分 |
+| `references/production-workflow.md` | 故事开发到校验导出的阶段交付、交接表与回改顺序 |
+| `references/project-data.md` | `project.json`实体、字段关系、素材绑定与依赖快照规则 |
+| `references/rule-authority.md` | 跨模块规则编号（`R-*`）与定义归属 |
+| `references/scene-timing.md` | 整场时间预算与制作片段拆分规则 |
+| `references/voice-reference-assets.md` | 角色声音设计、母版、模型投喂副本与音频槽绑定规范 |
+| `references/tools.md` | 四个本地CLI脚本的参数、输出与退出码说明 |
+| `references/constraints.md` | 提示词30–50字正向尾约束写法 |
+| `sd-story-development/` | 选题、故事优化、剧本证据审阅与导演风格模块（含`SKILL.md`及4份参考） |
+| `sd-scriptwriter/` | 梗概、人物、大纲与中文场景剧本模块（含`SKILL.md`及2份参考） |
+| `sd-storyboard/` | 资产节拍、9B八岗位分镜与审阅模块（含`SKILL.md`及3份参考） |
+| `sd-static-assets/` | T1–T6/T6B/T6C静态资产提示词模块（含`SKILL.md`及2份参考） |
+| `sd-dynamic-video/` | T7–T9动态视频提示词与声音脚本模块（含`SKILL.md`及2份参考） |
+| `examples/demo/` | 《院门线索》1.0完整项目数据（`project.json`）与前期交接文档（`preproduction.md`） |
+| `examples/voice-reference/` | 《院门线索》1.1声音参考规划示例（`README.md`、`preproduction.md`、`project.json`） |
+| `tests/` | Schema、数据关系、提示词QC、声音参考、切图与导出的单元测试套件 |
 
-## 使用入口
+## 快速开始
 
-制作流程为故事开发 → 剧本与审阅 → 资产节拍及整场预算 → 分镜 → 提示词与参考素材 → 校验和导出。已有材料可从对应阶段进入，局部任务交付所需范围。
-
-- 做创作与制作：从[任务入口](SKILL.md)和[制作流程](references/production-workflow.md)开始。
-- 编写项目JSON：查看[数据契约](references/project-data.md)及示例。
-- 运行本地命令：查看[工具用法](references/tools.md)。
-- 给视频模型准备角色音色：查看[声音参考资产](references/voice-reference-assets.md)。
-
-## 本地运行
-
-核心工具使用Python 3.10+标准库。切分额外图像格式时可选安装Pillow，具体支持范围见[切图工具](references/tools.md#切图)。在仓库根目录执行：
+核心脚本仅依赖Python 3.10+标准库（切分非标准PNG或JPEG/WebP时可选安装Pillow）。在仓库根目录执行：
 
 ~~~powershell
 python -B -X utf8 scripts/qc_check.py examples/demo/project.json --source examples/demo/preproduction.md
@@ -38,6 +39,6 @@ python -B -X utf8 scripts/render_project.py examples/demo/project.json --output 
 python -B -X utf8 -m unittest discover -s tests
 ~~~
 
-导出生成`project.md`、每镜`SHOT-ID_分镜.md`及托管清单`.drama-export.json`。`output/`是运行时生成目录，不保存源数据；导出后保留清单，供再次导出的覆盖检查使用。
-
-项目JSON保存制作数据与依赖快照，Markdown是导出视图。回改先更新源稿及受影响内容，再捕获依赖、QC和导出。字段以Schema为准，跨模块规则见[公共规则](references/rule-authority.md)，提示词字段以各模块模板为准。
+- **创作与制作编排**：从[SKILL.md](SKILL.md)和[制作流程](references/production-workflow.md)进入对应阶段。
+- **数据结构与改稿**：参考[项目数据契约](references/project-data.md)与[公共规则](references/rule-authority.md)。
+- **命令行工具**：参考[本地工具说明](references/tools.md)。

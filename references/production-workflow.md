@@ -1,67 +1,47 @@
 # 故事开发到制作交付
 
-完整制作按下表推进；已有材料从相应阶段进入，局部任务交付指定范围。字段见[项目数据](project-data.md)，命令见[本地工具](tools.md)，跨模块约定见[公共规则](rule-authority.md)。
+完整制作按下表推进；已有材料从对应阶段进入，局部任务仅交付请求范围。数据字段见[项目数据](project-data.md)，命令见[本地工具](tools.md)，跨模块规则见[公共规则](rule-authority.md)。
 
 ## 阶段与交付
 
-| 阶段 | 入口 | 交付与交接要点 |
+| 阶段 | 入口 | 交付内容 |
 |---|---|---|
-| 1. 选题与故事优化 | [前期开发](../sd-story-development/SKILL.md) | 选题卡、优化大纲，明确人物目标、阻力、代价、回报及故事范围；按需附风格卡 |
-| 2. 剧本编写与审阅定稿 | [编剧](../sd-scriptwriter/SKILL.md)、[证据审阅](../sd-story-development/references/script-review.md) | 实际修订后的源剧本、审阅报告和制作采用的版本 |
-| 3. 资产与节拍整理 | [分镜](../sd-storyboard/SKILL.md) | 稳定资产ID、动作与信息节拍、原台词及源定位；需要声音参考时整理角色声音卡、试听与母版状态；先排整场预算，再选择制作片段边界 |
-| 4. 八岗位分镜 | [设计方法](../sd-storyboard/references/design-9b.md) | 逐镜依据与决策、物理镜头、时长、声音、转场和素材需求 |
-| 5. 提示词与参考素材 | [静态](../sd-static-assets/SKILL.md)、[动态](../sd-dynamic-video/SKILL.md) | 静动态提示词、图像及实际声音绑定、完整project.json；故事板按既定镜头采样，已生成图片按用途切分，声音按模型准备副本 |
-| 6. 校验与导出 | [本地工具](tools.md) | 无ERROR的项目数据、全局制作文档、逐镜五章及托管清单；有audio_reference_profile时按目标模型输出，无此字段时输出兼容双块 |
+| 1. 选题与故事优化 | [sd-story-development](../sd-story-development/SKILL.md) | 选题卡、优化大纲（人物目标、阻力、代价、回报与范围），按需附风格卡 |
+| 2. 剧本编写与审阅 | [sd-scriptwriter](../sd-scriptwriter/SKILL.md)、[剧本审阅](../sd-story-development/references/script-review.md) | 源剧本、证据审阅结论与制作采用的基线版本 |
+| 3. 资产与节拍整理 | [sd-storyboard](../sd-storyboard/SKILL.md)、[整场预算](scene-timing.md) | 稳定资产ID、动作与信息节拍、原台词及源定位、整场时间预算与分段边界 |
+| 4. 八岗位分镜 | [9B八岗位设计](../sd-storyboard/references/design-9b.md) | 逐镜八岗位决策、物理镜头（`segments`）、时长、声音与转场 |
+| 5. 提示词与素材绑定 | [sd-static-assets](../sd-static-assets/SKILL.md)、[sd-dynamic-video](../sd-dynamic-video/SKILL.md) | T1–T9提示词、参考素材位绑定与完整`project.json` |
+| 6. 校验与导出 | [本地工具](tools.md) | 通过QC的`project.json`，导出`project.md`、`SHOT-ID_分镜.md`与`.drama-export.json` |
 
-## 剧本基线与文档
+## 项目文件约定
 
-基线是本批制作采用的源剧本版本。可以沿用用户给定的定稿，或在写作、审阅和修订后登记新版本。审阅结论与用户授权分别记录；已有授权覆盖的批次可继续，草稿按草稿状态交付。
-
-工作材料可按下列名称保存或合并，不要求为每项单独建文件：
-
-| 建议文档 | 保存内容 |
+| 文件 | 用途 |
 |---|---|
-| development.md | 选题、优化大纲、风格和选用的节奏目标 |
-| script.md或片名_场景剧本.md | 有明确版本的场次、动作和原始台词 |
-| script-review.md | 被审版本、证据、问题、实际修订和本范围结论 |
-| handoff.md | 制作采用的基线、源定位映射、文字/声音方案和未决事项 |
-| project.json | 数据齐备后的完整制作项目 |
+| `preproduction.md` 或 `片名_场景剧本.md` | 源剧本、开发摘要、整场时间预算与源定位映射（示例见`examples/demo/preproduction.md`） |
+| `project.json` | 完整结构化制作数据与`depends_on`依赖快照（示例见`examples/demo/project.json`） |
+| `output/<project>/` | `render_project.py`生成的`project.md`、`SHOT-ID_分镜.md`与`.drama-export.json` |
 
-多集项目可分集建目录，共享系列设定。公共资产及声音参考可用[sync-assets](tools.md#数据修改)同步；实际声音文件按分集媒体根目录组织。
+多集项目可分集建目录，通过`project_data.py sync-assets`同步公共角色、场景、道具、声音及全局静态提示词。
 
-## 制作交接表
+## 制作交接要点
 
-至少记录本批制作需要的以下信息：
+1. **基线与范围**：记录源剧本版本、采用场次、审阅状态、项目画幅（`9:16` / `16:9` / `2.39:1`）、视觉形态与导演叙事风格。
+2. **整场时间预算**：按[整场预算](scene-timing.md)排定对白、操作、反应、证据阅读和转场的顺序与并行区间，建立场内总轴与各`SHOT`局部轴（0.0秒起）的映射。
+3. **源稿到制作数据映射**：
+   - 登记角色（`CHAR-`）、场景（`SCENE-`）、道具（`PROP-`）。
+   - 提取行动与信息变化节拍（`BEAT-`），覆盖采用范围内的全部动作。
+   - 按执行顺序登记台词（`LINE-`），保留说话者、类型（`dialogue` / `os` / `narration`）与原文；可用`source_ref`记录源定位锚点。
+   - 按5–30秒承载量划分制作片段（`SHOT-`）及内部物理镜头（`segments`），完成八岗位设计后编写提示词（`PROMPT-`）。
+4. **文字与声音**：
+   - 动态提示词默认无字幕。画内文字与后期叠字写入`shots.overlays`（导出至分镜文档第五章）或在交接文档单列。
+   - 使用视频模型声音参考时，按[声音参考资产](voice-reference-assets.md)登记`VOICE-`资产、母版与模型副本；样片转写与`audition_text`不进入`dialogues`或镜头台词引号。
 
-- 源剧本文件、版本、采用范围；审阅覆盖范围、结论、未决问题及已有授权依据。
-- 项目画幅、视觉形态与导演叙事风格；单集时长和制作片段时长分别记录。
-- [整场时间预算](scene-timing.md)：对白、操作、反应、证据阅读和转场的顺序或并行，分段总轴与各SHOT局部轴的对应，估算或实测依据及未验证项。
-- 源位置到资产ID、BEAT和LINE的映射。定位可用集/场/段落ID或文件行号，须能回到对应版本的原文。
-- 台词、OS、NAR、画内文字与后期叠字的用途，以及实际参考素材和继承范围。
-- 使用声音参考时，记录角色声音ID、母版状态、目标模型、投喂副本及音频槽；待制作项和模型未覆盖范围保留明示，见[声音参考规范](voice-reference-assets.md)。
+## 回改同步顺序
 
-### 从源稿到制作数据
+源稿或上游设定变更时，按以下顺序更新：
 
-1. 登记角色、场景和可复用道具，沿用已有稳定ID。
-2. 按行动与信息变化提取beats，覆盖全部采用范围；没有台词的动作也要记录。
-3. 逐句登记dialogues，保留说话者、类型、所属节拍和执行顺序。
-4. 先按整场事件预算选择片段边界，再按承载量认领节拍。一个shot为5–30秒制作片段，segments为其中的物理镜头；故事板九格是静态节点。八岗位决定的摄影或动作改变耗时时回算预算。
-5. 八岗位完成设计后写提示词和参考绑定，数据齐备再执行完整JSON校验。
-
-源稿映射示例见[院门线索](../examples/demo/preproduction.md)。源稿与映射由Agent/人工核对，JSON内部关系由工具检查。
-
-### 文字与声音
-
-动态模板默认“无字幕”。后期字幕、金句、系统面板或计时器可写入分镜的`overlays`字段（导出于分镜文档第五章）或在交接文档单列确切文案、出现节点、位置用途与制作方式。
-
-故事依赖信件、屏幕等画内文字时，记录载体和内容，明确生成或后期方案，并保留可见的信息依据。旁白须进入源剧本和dialogues，信息同步不等于每句旁白单独生成一个shot。
-
-角色声音资产供视频模型参考身份，正式对白仍来自剧本与镜头正文。参考样片的转写仅留在声音记录中，不进入`dialogues`或镜头台词引号。声音文件长度不替代对白预算；母版与本镜情绪、语速分别设计，返片核对角色归属、串读及跨镜声音一致性。
-
-## 回改与重新交付
-
-故事核、动机或回报问题回到故事优化；表达和台词问题回到编剧。分镜提出回改建议后，按以下顺序同步：
-
-源剧本增版 → 更新审阅与交接 → 修订并增版受影响实体 → 重做相关设计和提示词 → 捕获依赖 → QC → 重新导出。
-
-源稿不在JSON依赖快照内，回改后用`qc_check.py project.json --source preproduction.md`核对台词及定位映射。快照、历史比较与覆盖保护见[本地工具](tools.md)。
+1. 修订源剧本与`preproduction.md`交接映射。
+2. 修改受影响的资产、节拍、台词、分镜设计与提示词，并递增对应实体的`revision`。
+3. 运行`project_data.py capture`更新`depends_on`依赖快照。
+4. 运行`qc_check.py project.json --source preproduction.md --previous old_project.json`核对一致性。
+5. 运行`render_project.py`重新导出Markdown文档。

@@ -8,24 +8,20 @@ metadata:
 
 # 选题、故事优化与剧本审阅
 
-将点子、故事和现稿整理成后续写作或制作的依据。场景正文与台词交给[编剧模块](../sd-scriptwriter/SKILL.md)。
+将点子、梗概和现稿整理为后续剧本写作或制作交接的依据。
 
-## 按任务读取
+## 任务路由
 
-| 任务 | 参考 | 交付 |
+| 任务 | 参考文档 | 交付内容 |
 |---|---|---|
-| 比较点子、确定题眼与叙事方向 | [选题](references/topic-selection.md) | 选题卡和适配理由 |
-| 优化故事、人物、冲突或大纲 | [故事优化](references/story-optimization.md) | 修改依据、方案和优化后大纲 |
-| 审阅现稿、核对修订与定稿条件 | [剧本审阅](references/script-review.md) | 证据、问题、修法与本范围结论 |
-| 选择或核对导演表达 | [导演风格](references/director-styles.md) | 风格卡与取舍 |
-
-只有点子时先判断方向；已有明确选题可直接优化；已有剧本可直接审阅。故事优化不以先选导演风格为前提，局部请求不追加整套报告。
+| 选题比较与叙事路线 | [references/topic-selection.md](references/topic-selection.md) | 选题卡与适配理由 |
+| 故事核、人物、冲突与大纲优化 | [references/story-optimization.md](references/story-optimization.md) | 修改方案与优化后大纲 |
+| 剧本证据审阅与定稿核对 | [references/script-review.md](references/script-review.md) | 证据定位、问题分级、修法与审阅结论 |
+| 导演叙事风格选择 | [references/director-styles.md](references/director-styles.md) | 风格卡与视听执行取舍 |
 
 ## 工作要求
 
-- 分清原素材、创作提案和待核验事实。问题绑定版本及可查位置；没有编号时用段落或原句定位。
-- 先处理人物、因果和回报问题，再完善表达。结构问题可重构，商业节奏目标按当前项目选用。
-- Type A/B/C/D表示叙事路线，与写实、2D、3D等视觉形态分开。
-- 选题和故事建议使用“保留／修订／换方向”；剧本审阅使用“可交接／待修订／待补材料”，都注明范围与依据。
-
-进入制作或回改已制作内容时，按[制作流程](../references/production-workflow.md)更新源稿与交接记录。字段见[数据契约](../references/project-data.md)，程序检查见[本地工具](../references/tools.md)。
+- 区分原稿事实（附集场、段落或行号）、创作提案与待核验信息。
+- 优先解决人物动机、因果链条与核心回报问题，再调整局部表达。
+- 叙事路线（Type A/B/C/D）与视觉形态（写实 / 2D / 3D）分别记录。
+- 选题与故事建议使用“保留／修订／换方向”；剧本审阅结论使用“可交接／待修订／待补材料”。

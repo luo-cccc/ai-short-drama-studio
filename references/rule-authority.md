@@ -1,41 +1,36 @@
-# 跨模块规则
+# 跨模块公共规则
 
-本表维护跨模块的制作约定。模板给出提示词字段，Schema定义数据字段，脚本实现检查与导出；命令见[本地工具](tools.md)。
+本表维护跨模块的制作约定与`R-*`规则标识。提示词字段以各模块`templates.md`为准，数据字段以`schemas/project.schema.json`为准，校验与导出逻辑见`scripts/`。
 
-## 定义归属与优先级
+## 优先级
 
-1. 当前用户约定及已有授权决定任务范围与审查节奏，不重复请求同一授权。
-2. 本表定义跨模块约定；静态与动态模块的templates.md分别维护模板字段和顺序。
-3. schemas/project.schema.json定义数据字段，scripts维护实际检查与导出行为。创作约定不等于已经程序化实现的门控。
-4. 入口、示例和专业细则引用相应定义。修订时先改所属定义，再同步受影响模板、文档、代码与测试。
+1. 用户当前指令与明确范围优先。
+2. 本表定义跨模块规则；静态与动态模块的`templates.md`定义提示词结构。
+3. `schemas/project.schema.json`定义JSON字段结构，`scripts/`实现程序化校验与导出。
 
-下表R-*标识用于跨文件引用。
+## 规则清单
 
-| ID | 适用范围 | 制作约定 | 详细来源 |
+| ID | 适用范围 | 规则内容 | 详细参考 |
 |---|---|---|---|
-| R-WORKFLOW-001 | 完整制作 | 选题与故事优化→剧本编写与证据审阅→资产节拍→八岗位→静动态提示词→JSON校验导出；已有材料可直接进入对应阶段，局部任务按范围交付。 | [制作全流程](production-workflow.md) |
-| R-BASELINE-001 | 剧本到制作交接 | 登记源文件、版本、故事范围、审阅结论、未决事项及用户已有授权依据；动作和台词保留源定位并映射稳定ID。回改先修订源剧本和交接记录，再更新下游。审阅结论、用户确认及JSON QC分别记录。 | [制作全流程](production-workflow.md)、[证据审阅](../sd-story-development/references/script-review.md) |
-| R-DEVELOP-001 | 前期开发与评审 | Type A/B/C/D为叙事路线，导演风格与写实/2D/3D视觉形态分别记录。商业节奏阈值按项目范围选用；默认以证据给质性结论。量化前明确完整权重与唯一扣罚入口，缺项不编分。 | [前期开发模块](../sd-story-development/SKILL.md) |
-| R-TEXT-001 | 字幕与UI交接 | 区分角色台词、画内文字与后期叠字。动态模板默认无字幕；叙事依赖的文字须在交接表或shots.overlays记录内容、出现节点、实现方式及无文字时的可见信息，不把后期清单混入生成提示词。 | [制作全流程](production-workflow.md)、动态模板 |
-| R-STRUCT-001 | T1–T6/6B/6C静态提示词 | 六层语义顺序：任务、主体、场景、情绪目标、视觉风格、质量约束；参考声明在前，画幅参数独立置末。情绪目标为条件层，T6/6B/6C保留，T2不要求，其余按用途选择。层序不等于固定行数。 | [静态模板](../sd-static-assets/references/templates.md) |
-| R-STRUCT-002 | T7–T9动态提示词 | 六层顺序：任务、主体固有外观、场景空间、整体情绪目标、视觉风格、镜头脚本。情绪目标和风格分别独立成段；环境音/BGM在镜头块前，尾约束在最后镜头后。 | [动态模板](../sd-dynamic-video/references/templates.md) |
-| R-VISUAL-001 | 提示词画面段 | 写可见外观、动作和空间；声音段允许听觉信息，情绪目标允许观众情绪递进。设计解释留在代码块外，模板写作者说明不进入交付正文。 | [静态设计](../sd-static-assets/references/static-rules.md)、[动态写作方法](../sd-dynamic-video/references/dynamic-rules.md) |
-| R-PARAM-001 | 参数写法 | 人物档案可保留数值，投产主体改为视觉比例；主体动作避免量化转头或抬手角度。机位与光影可用焦距、光圈、色温、光位角度并配视觉描述；尺寸、速度、ISO、快门和音量不作为本项目提示词指令。图板分区比例、颜色值和线宽可保留。 | [静态设计](../sd-static-assets/references/static-rules.md)、[动态写作方法](../sd-dynamic-video/references/dynamic-rules.md) |
-| R-SPACE-001 | 分镜拆分与动态段落 | 单段5–30秒，可通过运镜或转场跨空间；须说明场景与动作过渡。超出承载量时拆分分镜，不为固定镜数删剧情。 | [分镜规则](../sd-storyboard/references/storyboard-rules.md) |
-| R-TIME-001 | 动态镜头块 | 采用镜头1（0.0-3.5s）：格式。编号从1连续；起止时间各一位小数，首段从0.0起，相邻时间相接且时长为正，最后结束等于分镜时长。 | [动态模板](../sd-dynamic-video/references/templates.md)、项目shots/segments |
-| R-TIME-002 | 整场预算与分段 | 先排对白、操作、反应、证据阅读和转场的顺序与并行，再拆制作片段；并行区间共用时间，记录估算或实测依据、场内轴与SHOT局部轴映射。预算表和镜内阶段由人工核对，程序仍只检查现有片段时间字段。 | [整场预算](scene-timing.md) |
-| R-SHOT-001 | 镜头正文与设计对照 | 摄影写具体主体、相对机位、起幅、运动启动与过程及落幅；关键证据从真正清楚可辨时计阅读窗口。切点落在实际动作、目光、物件或声音节点，画外过程按时间继续。八岗位、segments.description、故事板和动态正文使用一致执行选择，语义由人工审阅。 | [分镜方法](../sd-storyboard/references/storyboard-rules.md)、[动态写法](../sd-dynamic-video/references/dynamic-rules.md) |
-| R-REF-001 | 图像参考 | 静态使用@图片N，动态使用@素材N；声明参考内容和禁止继承内容，正向参考项与禁止继承项不得自相矛盾，且须与JSON绑定的资产身份及名称一致。T1角色板右区四格头像提供五官、发型与神态细节，左区完整全身三视图提供头身比例与正侧背服装结构，左右两区必须共享同一五官骨相；跨服装/跨状态变体T1优先绑定母图面部特写切片锁死骨相并排除旧服装。T2道具与T3场景的跨状态变体通过@图片1锁死母图器型或空间拓扑并排除旧状态。T5及彩色T6场景可继承空间、基础色彩光影和风格；T6B只取造型结构。T6C与动态T8/T9引用故事板或结构切片时只取构图、站位与姿态，禁止继承切片内的人物五官面容，五官以角色设定图为准。动态角色/道具可继承固有配色，不继承参考图的叙事光影与整体调色；动态场景/故事板不继承画面风格、光影、色彩，由风格段定义。T8以图为主，T9保留全量文字。 | [静态模板](../sd-static-assets/references/templates.md)、[动态模板](../sd-dynamic-video/references/templates.md) |
-| R-VOICE-001 | 视频模型的角色声音参考 | 声音卡与身份母版保存稳定音色、口音和咬字，模型投喂副本按实际能力准备。动态提示词使用独立声音资产及角色音频槽，声明只参考声音身份；样片文字、情绪、语速和背景声音不自动继承。正式台词及本镜表演写在镜头内，样片转写不进入dialogues或台词引号。无实际文件不虚构声音槽，但须沿用characters.voice的核心声线特征保持跨镜音色一致；返片核对归属、串读和跨镜一致性。 | [声音参考资产](voice-reference-assets.md)、[数据说明](project-data.md#角色声音参考数据) |
-| R-CONSIST-001 | 人物与场景跨镜一致性 | 角色设定分离不可变面部骨相DNA与可变默认服饰；露脸镜头须完整保留面部骨相特征，换装/战损/湿身沿用角色及声音身份并覆写服饰子句，局部手足或纯背影镜头不写不可见正脸五官，仅画外发声者不因描述外观而被拉入画面。多人同框在静态T6/T6B/T6C与动态T8/T9主体层均须逐角色内联绑定@图片N/@素材N与画面方位防串脸。场景按相机实际位置、朝向及可见范围选择T5切片，不把固定视角编号当全场通用正反向。主光源有建筑或声画事实依据，同场保持连续；有剧情动机的光源、色温和物理状态变化须承接。QC分别核对面部骨相DNA、整体特征、声线特征与参考归属。 | [静态设计](../sd-static-assets/references/static-rules.md)、[动态设计](../sd-dynamic-video/references/dynamic-rules.md)、[QC脚本](../scripts/qc_check.py) |
-| R-LIGHT-001 | 场景资产与镜头光影 | T3/T5使用基础可读光表达空间；动态场景层写物体与结构，风格层写叙事光影。T6彩色故事板用于审阅与时序参考，匹配目标外观及真实起终态的单帧（或T6C重绘全分辨率单帧）可作首尾帧候选；T6B线稿用于结构参考。首尾帧属于实际像素边界，应事先准备目标风格，不能用普通参考图的禁止继承声明消除输入帧外观。 | 静态模板、[9B光影设计](../sd-storyboard/references/design-9b.md) |
-| R-ASPECT-001 | 模板画幅 | T1/T3/T4外画幅固定16:9，T2为3:4，T5/T6/T6B/T6C/T7/T8/T9外画幅均为项目主画幅（project.aspect_ratio）。T5/T6/T6B内部三行三列九格画面区与外画幅同构（均为项目主画幅），无顶栏、左栏与格下文字条；外画幅由项目QC检查。 | 静态模板、[数据说明](project-data.md) |
-| R-CONSTRAINT-001 | 提示词尾约束 | 一段30–50字正向描述，写当前画面特有的数量、接触关系与可见范围，不重复任务或风格。不加管理标签；参考声明的禁止继承、任务层无字幕和用户明确排除项各留原位。 | [约束写法](constraints.md) |
-| R-LENGTH-001 | 提示词长度 | 普通T1–T4以300–500字为建议，T5/T6/6B以字段完整为准；动态不设固定字数上限。长度不是画面承载或质量判断。 | 各模板、文本QC提示 |
-| R-TABLE-001 | 总分镜表 | 导出固定15字段，由制作数据生成。 | [总分镜表字段](../sd-storyboard/SKILL.md#总分镜表字段)、[导出器](../scripts/render_project.py) |
-| R-DATA-001 | 完整项目与修改 | 使用project.json保存稳定ID、关系、修订及依赖快照，Markdown为导出视图。上游变化后重做受影响内容，再显式捕获新依赖；不要以重捕快照代替内容修订。 | [数据说明](project-data.md)、[Schema](../schemas/project.schema.json) |
-| R-QC-001 | 交付检查 | JSON检查数据关系、台词与时间、快照和每条提示词；Markdown只逐提示词检查格式。程序结果、人工审查和用户确认分开处理，不以其中一项替代其余项。 | [QC脚本](../scripts/qc_check.py)、[数据说明](project-data.md) |
-
-## 审阅与实际投产
-
-专业审阅按用户约定的阶段或批次执行；前期“可交接”、分镜review.status和用户确认分别记录。字段与检查边界见[项目数据](project-data.md)，命令和导出行为见[本地工具](tools.md)。媒体生成后核对身份、动作、空间、光影与音画关系。
+| R-WORKFLOW-001 | 完整制作 | 按“选题与故事优化 → 剧本与审阅 → 资产节拍与预算 → 八岗位分镜 → 静动态提示词 → JSON校验与导出”推进；局部任务直接交付请求范围。 | [production-workflow.md](production-workflow.md) |
+| R-BASELINE-001 | 剧本交接 | 登记源剧本版本、采用范围、审阅状态；动作与台词保留源定位并映射稳定ID。回改先更新源稿与交接记录，再同步下游实体与快照。 | [production-workflow.md](production-workflow.md) |
+| R-DEVELOP-001 | 前期开发 | Type A/B/C/D表示叙事推进路线，与写实/2D/3D视觉形态及导演风格分别记录；审阅问题须绑定原稿证据位置。 | [sd-story-development](../sd-story-development/SKILL.md) |
+| R-TEXT-001 | 字幕与UI | 区分角色台词、画内文字与后期叠字。动态提示词默认无字幕；画内文字与后期叠字记录于`shots.overlays`或交接表。 | [production-workflow.md](production-workflow.md) |
+| R-STRUCT-001 | T1–T6/6B/6C | 六层语义顺序：任务、主体、场景、情绪目标（条件层）、视觉风格、质量约束；参考声明置顶，`--ar`画幅参数独占末行。 | [静态模板](../sd-static-assets/references/templates.md) |
+| R-STRUCT-002 | T7–T9 | 六层顺序：任务、主体固有外观、场景空间、整体情绪目标、视觉风格、镜头脚本；环境音与BGM在镜头块前，尾约束在末镜后、`--ar`前。 | [动态模板](../sd-dynamic-video/references/templates.md) |
+| R-VISUAL-001 | 提示词正文 | 画面段写可见外观、动作与空间；声音段写声源与台词表演；设计依据、模板标签与占位符不进入提示词代码块。 | [static-rules.md](../sd-static-assets/references/static-rules.md)、[dynamic-rules.md](../sd-dynamic-video/references/dynamic-rules.md) |
+| R-PARAM-001 | 参数规范 | 机位与光影可用焦距、光圈、色温、光位角度并配视觉效果描述；主体动作不写量化角度，正文禁用物理尺寸、速度（m/s）、重量（kg）、照度（lux）、分贝（dB）、ISO、快门及罗盘方位词（东南西北）。 | [qc_check.py](../scripts/qc_check.py) |
+| R-SPACE-001 | 分镜时长与拆分 | 单个`SHOT`为5–30秒；超出承载量时延长或拆分为多个分镜，不为凑镜数删减剧情或按台词条数机械切镜。 | [storyboard-rules.md](../sd-storyboard/references/storyboard-rules.md) |
+| R-TIME-001 | 动态镜头时间戳 | 格式为`镜头1（0.0-5.0s）：`，序号从1连续递增，首段从`0.0`起，相邻段首尾相接，一位小数，总长等于分镜`duration`。 | [动态模板](../sd-dynamic-video/references/templates.md) |
+| R-TIME-002 | 整场时间预算 | 先排对白、操作、反应、证据阅读和转场的顺序与并行区间，再划分制作片段；局部时间小于等于6.0秒且含5个及以上细分时段时触发高密度WARN。 | [scene-timing.md](scene-timing.md) |
+| R-SHOT-001 | 镜头过程与切点 | 明确主体、相对机位、起幅、运动过程与落幅；证据阅读窗口从对象清楚可辨时起算；切点落在具体动作、目光、物件或声音节点，八岗位、`segments.description`、故事板与动态正文保持一致。 | [storyboard-rules.md](../sd-storyboard/references/storyboard-rules.md) |
+| R-REF-001 | 视觉参考声明 | 静态用`@图片N`，动态用`@素材N`；正向参考与`禁止继承`不得矛盾，声明主语与绑定实体类别/名称一致。跨状态T1/T2/T3绑定母图锁死骨相/器型/建筑拓扑并禁旧状态；T6B仅继承结构；引用T6/T6B切片时禁止继承人物五官面容；动态场景/故事板参考必须`禁止继承画面风格、光影、色彩`。 | [project-data.md](project-data.md)、[qc_check.py](../scripts/qc_check.py) |
+| R-VOICE-001 | 声音参考资产 | 声音卡与母版保存稳定音色、口音和咬字，按`audio_reference_profile`绑定模型副本。声明只参考声音身份，禁止继承样片台词、情绪、语速、背景声音；样片转写与`audition_text`不进入`dialogues`或镜头台词引号。 | [voice-reference-assets.md](voice-reference-assets.md) |
+| R-CONSIST-001 | 跨镜一致性 | 角色`description`包含至少2项不可变面部骨相特征与默认服装；露脸镜头保留骨相DNA，局部手足/纯背影移除不可见五官词；多人同框逐角色内联绑定槽位与画面方位；同场景跨镜保持光影色温连续（有剧情动机变化除外）；未绑音频槽时发声镜头沿用`characters.voice`核心声线词。 | [static-rules.md](../sd-static-assets/references/static-rules.md)、[dynamic-rules.md](../sd-dynamic-video/references/dynamic-rules.md) |
+| R-LIGHT-001 | 空间光与叙事光 | T3/T4/T5使用基础漫射可读光；镜头叙事光影在故事板（T6/T6C）与动态风格层定义。T6B线稿仅作结构参考，写实/彩色首尾帧须使用T6C重绘全分辨率目标风格单帧。 | [design-9b.md](../sd-storyboard/references/design-9b.md) |
+| R-ASPECT-001 | 模板画幅 | T1/T3/T4固定`16:9`，T2固定`3:4`，T5/T6/T6B/T6C/T7/T8/T9跟随`project.aspect_ratio`；T5/T6/T6B内部3×3单格与外画幅同构，满幅无字。 | [静态模板](../sd-static-assets/references/templates.md) |
+| R-CONSTRAINT-001 | 提示词尾约束 | 正文末尾、`--ar`前写一段30–50字正向描述，交代当前画面特有的数量、接触关系与可见范围，禁用管理标签与否定词堆叠。 | [constraints.md](constraints.md) |
+| R-LENGTH-001 | 静态字数建议 | T1–T4建议300–500字，T5/T6/T6B以九格字段完整为准，动态提示词不限固定字数。 | [qc_check.py](../scripts/qc_check.py) |
+| R-TABLE-001 | 总分镜表 | `project.md`导出固定15列总分镜表。 | [render_project.py](../scripts/render_project.py) |
+| R-DATA-001 | 依赖快照 | `shots`与`prompts`在`depends_on`保存直接依赖的`id`、`revision`与SHA-256指纹；修改上游后须重做下游内容并运行`capture`。 | [project-data.md](project-data.md) |
+| R-QC-001 | 校验范围 | JSON QC检查Schema、引用关系、台词顺序、时间轴、依赖快照与每条提示词；Markdown/文本QC仅检查独立提示词块。 | [tools.md](tools.md) |

@@ -1,22 +1,15 @@
 # 角色声音参考准备示例
 
-本例沿用《院门线索》的两镜两句台词，[交接文档](preproduction.md)登记本例项目ID、源稿和预算，并增加1.1版`VOICE-WANQING`声音设计。当前仅为`planned`：未生成音频、未试听、未指定目标视频模型，也未虚构音频文件、指纹或素材槽。原剧本两句对白保持不变。
+本示例在《院门线索》基础上使用Schema `1.1`登记角色晚晴的声音参考资产（`VOICE-WANQING`）。当前状态为`planned`（尚未生成母版与模型投喂副本，未分配音频素材槽）。
 
-## 声音设计交接
+## 声音设计卡片
 
-将声音描述与试听文案分别交给所选声音工具，按实际接口输入。下面是本例的起步设计，尚未验证听感。
+- **声音描述（`description`）**：青年女性，中音区，清亮偏实声；普通话，字头清楚，句尾自然收住。常态表达克制，保留自然呼吸。
+- **试听文案（`audition_text`）**：今天风很轻，沿着这条路走，前面就能看见院子。你要现在出发，还是再等一会儿？
 
-声音描述：
+试听文案仅保存在`voices[].audition_text`中，用于生成和识别参考样片，不进入`dialogues`或镜头台词引号。
 
-> 青年女性，中音区，清亮偏实声；普通话，字头清楚，句尾自然收住。常态表达克制，保留自然呼吸。生成单人自然说话的干声，不加入音乐、环境声或明显混响。
-
-试听文案：
-
-> 今天风很轻，沿着这条路走，前面就能看见院子。你要现在出发，还是再等一会儿？
-
-这段文案只用于制作和识别参考音频，不进入`dialogues`或镜头台词。试听选定后登记母版与转写，再根据实际视频模型裁剪或转换副本；用`audio_reference_profile`记录采用的能力与依据，用`reference_bindings.audio_reference_id`绑定副本。
-
-## 验证与导出
+## 校验与导出命令
 
 在仓库根目录执行：
 
@@ -26,6 +19,4 @@ python -B -X utf8 scripts/render_project.py examples/voice-reference/project.jso
 python -B -X utf8 scripts/qc_check.py output/voice-reference --mode auto
 ~~~
 
-JSON QC会提示声音待制作；这表示计划有效，不表示已具备可投喂音频。导出项目文档列出声音卡和试听文案，逐镜文档显示未绑定状态。
-
-登记真实音频后，使用`qc_check.py project.json --media-root 音频根目录`检查文件、指纹及可读取WAV时长，再捕获受影响依赖并导出。字段见[声音数据契约](../../references/project-data.md#角色声音参考数据)，命令见[本地工具](../../references/tools.md)，听审标准见[声音参考资产](../../references/voice-reference-assets.md)。
+当母版与模型投喂副本就绪后，将`status`更新为`"ready"`，补充`master`、`references`、`audio_reference_profile`及`reference_bindings`，并使用`--media-root`校验音频文件指纹与时长。详细规则见[角色声音参考资产](../../references/voice-reference-assets.md)。
