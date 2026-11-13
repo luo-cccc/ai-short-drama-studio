@@ -2,7 +2,7 @@
 name: sd-story-development
 description: 诊断短剧选题、优化故事与大纲、审阅剧本，并为定稿交接提供依据。用于进入编剧或制作前的内容开发，不替代场景剧本写作、八岗位分镜或提示词制作。
 metadata:
-  version: "V18.1"
+  version: "V18.3"
   agent_created: true
 ---
 

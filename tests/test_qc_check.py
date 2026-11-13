@@ -508,6 +508,141 @@ class CompleteProjectQCRegressionTests(unittest.TestCase):
         self.assertTrue(any("超出所属分镜duration" in e for e in board_res["errors"]), board_res["errors"])
         self.assertTrue(any("不存在的物理镜头2" in e for e in board_res["errors"]), board_res["errors"])
 
+    def test_cross_outfit_face_dna_lock_and_costume_variant_exemption(self):
+        from scripts.project_data import load_project, snapshot_dependencies
+
+        data = load_project(ROOT / "examples" / "demo" / "project.json")
+        # 1. 保留全套旧衣服但丢失五官骨相（换脸但没换衣）-> 必须触发面部五官骨相缺失警告
+        face_lost = deepcopy(data)
+        p2 = next(p for p in face_lost["prompts"] if p["id"] == "PROMPT-VIDEO-002")
+        p2["text"] = p2["text"].replace(
+            "窄脸，平直眉，深棕瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋",
+            "圆润娃娃脸，弯月细眉，浅蓝瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋",
+        )
+        p2["revision"] += 1
+        face_lost = snapshot_dependencies(face_lost)
+        p2_warns = next(r for r in qc.check_project(face_lost) if r.get("prompt_id") == "PROMPT-VIDEO-002")["warnings"]
+        self.assertTrue(any("核心面部五官/骨相特征缺失或偏离" in w for w in p2_warns), p2_warns)
+
+        # 2. 跨服装/跨状态变体：锁死全部面部五官骨相（窄脸、平直眉、深棕瞳孔），但换穿新衣、新发式与新鞋 -> 不误报外貌偏离
+        costume_variant = deepcopy(data)
+        p2_var = next(p for p in costume_variant["prompts"] if p["id"] == "PROMPT-VIDEO-002")
+        p2_var["text"] = p2_var["text"].replace(
+            "@素材1 参考角色晚晴的外观，服饰，固有配色与画面风格。禁止继承背景，叙事光影，整体调色，动作，表情。",
+            "@素材1 参考角色晚晴面部母图的五官骨相与脸型比例。禁止继承原图服装款式，旧状态，背景，叙事光影，整体调色，动作，表情。",
+        ).replace(
+            "窄脸，平直眉，深棕瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋",
+            "窄脸，平直眉，深棕瞳孔，高盘发髻，清瘦身形，换穿绯红喜服，金丝绣花鞋",
+        )
+        p2_var["revision"] += 1
+        costume_variant = snapshot_dependencies(costume_variant)
+        p2_var_warns = next(r for r in qc.check_project(costume_variant) if r.get("prompt_id") == "PROMPT-VIDEO-002")["warnings"]
+        self.assertFalse(any("CHAR-WANQING" in w and "外貌一致性" in w for w in p2_var_warns), p2_var_warns)
+
+        # 3. 变体 T1 未绑定 @图片1 纯文本生成 -> 警告跨服装换脸风险
+        unanchored_t1 = deepcopy(data)
+        unanchored_t1["prompts"].append({
+            "id": "PROMPT-CHAR-WANQING-WET",
+            "revision": 1,
+            "template": "T1",
+            "shot_id": None,
+            "duration": None,
+            "asset_ids": ["CHAR-WANQING"],
+            "reference_bindings": [],
+            "text": (
+                "生成一张角色完整视觉设定参考图，所有视图展示同一角色。\n"
+                "晚晴，年轻东亚女性，窄脸，平直眉，深棕瞳孔，清瘦身形，湿身状态，换穿夜行黑衣与软底短靴。\n"
+                "--ar 16:9"
+            ),
+            "depends_on": [],
+        })
+        unanchored_t1 = snapshot_dependencies(unanchored_t1)
+        t1_warns = next(r for r in qc.check_project(unanchored_t1) if r.get("prompt_id") == "PROMPT-CHAR-WANQING-WET")["warnings"]
+        self.assertTrue(any("未绑定基底角色参考图" in w for w in t1_warns), t1_warns)
+
+    def test_reference_attribute_contradiction_and_storyboard_face_pollution_and_voice_timbre(self):
+        from scripts.project_data import load_project, snapshot_dependencies
+
+        # 1. 角色换装参考声明同时正向继承与禁止继承“服装” -> 报错
+        contradictory = (
+            "@图片1 参考目标角色晚晴的五官骨相与服装结构。禁止继承服装结构、背景、动作、表情。\n"
+            "生成一张角色完整视觉设定参考图。\n--ar 16:9"
+        )
+        errors, _ = qc.check(contradictory, mode="static", template="T1")
+        self.assertTrue(any("继承项与禁止项冲突" in e and "服装" in e for e in errors), errors)
+
+        # 2. T6C 或动态提示词从故事板/结构切片正向继承“五官面容” -> 警告二手切片导致换脸
+        slice_face = (
+            "@图片1 参考关键帧结构切片的主体站位、人物五官面容与取景构图。禁止继承画面风格、光影、色彩。\n"
+            "生成一张单画面满幅的影视关键帧参考图。\n--ar 9:16"
+        )
+        _, warns = qc.check(slice_face, mode="static", template="T6C")
+        self.assertTrue(any("故事板/结构切片参考不宜正向继承人物五官面容" in w for w in warns), warns)
+
+        # 3. 角色发声镜头篡改或丢失 characters.voice 声线特征 -> 警告跨镜声线偏离
+        data = load_project(ROOT / "examples" / "demo" / "project.json")
+        p1 = next(p for p in data["prompts"] if p["id"] == "PROMPT-VIDEO-001")
+        p1["text"] = p1["text"].replace("清亮女中音", "粗粝苍老声线")
+        p1["revision"] += 1
+        rebuilt = snapshot_dependencies(data)
+        p1_warns = next(r for r in qc.check_project(rebuilt) if r.get("prompt_id") == "PROMPT-VIDEO-001")["warnings"]
+        self.assertTrue(any("跨镜声线一致性" in w for w in p1_warns), p1_warns)
+
+        # 4. 全局角色设定缺少面部五官骨相（仅写衣服身材）-> 项目级警告跨状态易换脸
+        no_face_proj = load_project(ROOT / "examples" / "demo" / "project.json")
+        no_face_proj["characters"][0]["description"] = "年轻女性，身形高挑，灰蓝长衫，黑布鞋。"
+        no_face_proj["characters"][0]["revision"] += 1
+        no_face_proj = snapshot_dependencies(no_face_proj)
+        proj_warns = qc.check_project(no_face_proj)[0]["warnings"]
+        self.assertTrue(any("缺少足够的不可变面部五官/骨相特征" in w for w in proj_warns), proj_warns)
+
+        # 5. 多切镜（镜头1纯背影 + 镜头2面部近景）必须保留面部五官DNA核对，不能因镜头1含“纯背影”而漏检面部
+        clauses = [("窄脸", ["窄脸"]), ("平直眉", ["平直眉"]), ("灰蓝长衫", ["灰蓝长衫"])]
+        multi_seg = (
+            "角色晚晴：窄脸，平直眉，灰蓝长衫。\n"
+            "镜头1（0.0-2.5s）：中景，纯背影，晚晴走向院门。\n"
+            "镜头2（2.5-5.0s）：面部近景，晚晴转头看锁。"
+        )
+        self.assertEqual(clauses, qc._visible_character_clauses(clauses, multi_seg, "角色晚晴：窄脸，平直眉，灰蓝长衫。"))
+
+        # 6. 多人同框静态 T6C/T6 提示词：角色B不能借用角色A的外观描述蒙混通过DNA核对
+        multi_char = load_project(ROOT / "examples" / "demo" / "project.json")
+        multi_char["characters"].append({
+            "id": "CHAR-SISTER",
+            "revision": 1,
+            "name": "晚霜",
+            "description": "年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，身形清瘦，灰蓝长衫，黑布鞋。",
+            "voice": "清冷女中音，匀速。",
+        })
+        multi_char["beats"][0]["character_ids"].append("CHAR-SISTER")
+        multi_char["shots"][0]["character_ids"].append("CHAR-SISTER")
+        multi_char["prompts"].append({
+            "id": "PROMPT-FRAME-001",
+            "revision": 1,
+            "template": "T6C",
+            "shot_id": "SHOT-001",
+            "duration": None,
+            "asset_ids": ["CHAR-WANQING", "CHAR-SISTER", "SCENE-GATE"],
+            "reference_bindings": [],
+            "text": (
+                "生成一张单画面满幅的影视关键帧参考图。\n"
+                "角色晚晴：年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，身形清瘦，灰蓝长衫，黑布鞋。\n"
+                "角色晚霜：金发碧眼，波浪卷发，晚礼服。\n"
+                "整体情绪为警觉。\n"
+                "写实风格，柔和天光，平视中近景。\n"
+                "两人站位清晰，衣袖贴合手腕，门框线条连贯。\n"
+                "--ar 9:16"
+            ),
+            "depends_on": [],
+        })
+        multi_char["shots"][0]["static_prompt_ids"].append("PROMPT-FRAME-001")
+        for pid in ("PROMPT-BOARD-001", "PROMPT-VIDEO-001"):
+            pr = next(p for p in multi_char["prompts"] if p["id"] == pid)
+            pr["asset_ids"].append("CHAR-SISTER")
+        multi_char = snapshot_dependencies(multi_char)
+        frame_warns = next(r for r in qc.check_project(multi_char) if r.get("prompt_id") == "PROMPT-FRAME-001")["warnings"]
+        self.assertTrue(any("角色晚霜（CHAR-SISTER）" in w and "核心面部五官/骨相特征缺失" in w for w in frame_warns), frame_warns)
+
 
 class CLIInputChecks(unittest.TestCase):
     def test_real_demo_passes_project_and_per_prompt_checks(self):

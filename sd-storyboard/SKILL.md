@@ -2,7 +2,7 @@
 name: sd-storyboard
 description: 将采用的场景剧本转为分镜、八岗位设计与资产规划，整理结构化制作数据并导出逐镜文档。适用于完整制作或指定范围的分镜规划，剧情回改交回编剧，媒体由外部工具生成。
 metadata:
-  version: "V18.2"
+  version: "V18.3"
   agent_created: true
 ---
 

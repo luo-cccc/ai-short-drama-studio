@@ -2,7 +2,7 @@
 name: ai-short-drama-production
 description: 编排中文短剧的选题、故事优化、剧本创作与证据审阅，承接资产节拍、八岗位分镜和静动态提示词，并用本地脚本校验完整项目JSON、导出Markdown制作文档。适用于故事开发到制作方案交付，不调用媒体生成服务或剪辑成片。
 metadata:
-  version: "V18.2"
+  version: "V18.3"
   agent_created: true
 ---
 

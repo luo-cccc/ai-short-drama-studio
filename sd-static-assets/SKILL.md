@@ -2,7 +2,7 @@
 name: sd-static-assets
 description: 设计短剧静态视觉资产并编写角色、道具、场景、多视角空间图和故事板提示词。用于静态提示词与参考图规划；本模块不调用生图服务。
 metadata:
-  version: "V18.1"
+  version: "V18.3"
   agent_created: true
 ---
 

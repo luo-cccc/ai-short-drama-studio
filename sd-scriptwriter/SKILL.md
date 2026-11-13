@@ -2,7 +2,7 @@
 name: sd-scriptwriter
 description: 创作或修改故事梗概、人物设定、大纲与中文场景剧本。只负责剧本内容；分镜、图像和视频提示词由对应模块处理。
 metadata:
-  version: "V18.2"
+  version: "V18.3"
   agent_created: true
 ---
 

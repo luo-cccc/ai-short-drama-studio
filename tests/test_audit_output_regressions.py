@@ -122,6 +122,59 @@ class ReviewOutputTests(unittest.TestCase):
         self.assertNotIn('有人来过', visual)
         self.assertIn('嘴唇自然开合完成说话动作。', visual)
 
+    def test_wan_visual_prompt_preserves_face_in_gaze_closeup_and_strips_face_in_pure_back_shot(self):
+        # 1. 近景目光/下颌/神情反应镜头（不含“脸/眼/中景”字样但实为露脸近景）-> 必须保留五官骨相与说话口型
+        closeup_gaze = (
+            '生成一段单镜头5秒的悬疑短片，同步生成环境音，音效，配音与背景音乐，音画口型同步。画面纯净，无字幕。\n'
+            '角色晚晴：年轻东亚女性，窄脸，平直眉，深棕瞳孔，灰蓝长衫。\n'
+            '镜头1（0.0-5.0s）：近景，晚晴目光落在铜锁上，下颌微收，神情凝重地说：“门锁换过了。”\n'
+            '--ar 9:16'
+        )
+        visual_closeup = build_wan_visual_prompt(closeup_gaze)
+        self.assertIn('窄脸', visual_closeup)
+        self.assertIn('平直眉', visual_closeup)
+        self.assertIn('深棕瞳孔', visual_closeup)
+        self.assertIn('嘴唇自然开合完成说话动作。', visual_closeup)
+
+        # 2. 中景/全景但声明“全程纯背影” -> 必须剥离正脸五官词且不生成张嘴说话动作，防止万相强行扭头露脸
+        pure_back = (
+            '生成一段单镜头5秒的悬疑短片，同步生成环境音，音效，配音与背景音乐，音画口型同步。画面纯净，无字幕。\n'
+            '角色晚晴：年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，灰蓝长衫。\n'
+            '镜头1（0.0-5.0s）：中景，全程纯背影，晚晴朝院门缓步走去，低声说：“跟紧我。”\n'
+            '--ar 9:16'
+        )
+        visual_back = build_wan_visual_prompt(pure_back)
+        self.assertNotIn('窄脸', visual_back)
+        self.assertNotIn('平直眉', visual_back)
+        self.assertNotIn('深棕瞳孔', visual_back)
+        self.assertNotIn('嘴唇', visual_back)
+        self.assertIn('灰蓝长衫', visual_back)
+
+    def test_global_character_t1_reuse_renders_character_sheet_label(self):
+        data = load_project(ROOT / 'examples/demo/project.json')
+        data['prompts'].insert(0, {
+            'id': 'PROMPT-CHAR-WANQING',
+            'revision': 1,
+            'template': 'T1',
+            'shot_id': None,
+            'duration': None,
+            'asset_ids': ['CHAR-WANQING'],
+            'reference_bindings': [],
+            'text': (
+                '生成一张角色完整视觉设定参考图，清冷警觉，所有视图展示同一角色。\n'
+                '晚晴，年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋。\n'
+                '纯白无缝背景，16:9横版，左55%全身三视图，右45%四格面部特写，左右两区共享同一张脸。\n'
+                '写实短剧风格，均匀柔光，五官骨相与服装接缝跨视角一致。\n'
+                '--ar 16:9'
+            ),
+            'depends_on': [],
+        })
+        data['shots'][0]['static_prompt_ids'].insert(0, 'PROMPT-CHAR-WANQING')
+        data['shots'][0]['revision'] += 1
+        data = snapshot_dependencies(data)
+        shot_doc = render_documents(data)['SHOT-001_分镜.md']
+        self.assertIn('角色设定图复用声明：复用 PROMPT-CHAR-WANQING，见 project.md 静态资产总库。', shot_doc)
+
 
 if __name__ == '__main__':
     unittest.main()

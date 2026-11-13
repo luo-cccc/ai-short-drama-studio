@@ -747,6 +747,146 @@ def _validate_voice_bindings(data, prompt, shot, groups):
     return errors, warnings
 
 
+def _validate_visual_bindings(data, prompt, shot, groups):
+    """核对视觉参考槽位（@图片N / @素材N）的声明归属、跨分镜故事板引用及角色主体行防串脸绑定。"""
+    errors, warnings = [], []
+    prompt_id = prompt["id"]
+    binding_by_slot = {item["slot"]: item["asset_id"] for item in prompt["reference_bindings"]}
+    for binding in prompt["reference_bindings"]:
+        asset_id = binding["asset_id"]
+        if asset_id.startswith("VOICE-"):
+            continue
+        slot = binding["slot"]
+        context = f"{prompt_id}/{slot}"
+        if asset_id in groups["prompts"]:
+            target_prompt = groups["prompts"][asset_id]
+            tpl = target_prompt["template"]
+            if (
+                tpl in {"T6", "T6B"}
+                and prompt["shot_id"] is not None
+                and target_prompt["shot_id"] not in (None, prompt["shot_id"])
+            ):
+                errors.append(
+                    f"{context}: 故事板参考 {asset_id} 属于另一分镜 {target_prompt['shot_id']}，不能跨分镜错绑九宫格故事板"
+                )
+            if tpl == "T1" and prompt["asset_ids"]:
+                t1_chars = {a for a in target_prompt["asset_ids"] if a.startswith("CHAR-")}
+                if t1_chars and not (t1_chars & set(prompt["asset_ids"])):
+                    errors.append(f"{context}: 角色设定图 {asset_id} 的所属角色未列入当前提示词 asset_ids")
+            elif tpl == "T2" and prompt["asset_ids"]:
+                t2_props = {a for a in target_prompt["asset_ids"] if a.startswith("PROP-")}
+                if t2_props and not (t2_props & set(prompt["asset_ids"])):
+                    errors.append(f"{context}: 道具设定图 {asset_id} 的所属道具未列入当前提示词 asset_ids")
+            elif tpl in {"T3", "T4", "T5"} and prompt["asset_ids"]:
+                scene_assets = {a for a in target_prompt["asset_ids"] if a.startswith("SCENE-")}
+                if scene_assets and not (scene_assets & set(prompt["asset_ids"])):
+                    errors.append(f"{context}: 场景参考图 {asset_id} 的所属场景未列入当前提示词 asset_ids")
+
+        decl_match = re.search(
+            r"(?m)^[ \t]*" + re.escape(slot) + r"[ \t]+参考([^\r\n]+)", prompt["text"]
+        )
+        if not decl_match:
+            continue
+        pos_subject = re.split(
+            r"禁止\s*继承|不继承|不参考|不包含|不采纳|禁止参考|排除|不使用|[。！？]",
+            decl_match.group(1),
+            maxsplit=1,
+        )[0].strip()
+
+        if asset_id in groups["prompts"]:
+            tpl = groups["prompts"][asset_id]["template"]
+            if tpl == "T1" and re.match(r"^(?:场景|故事板|故事分镜图|调度图|道具)", pos_subject):
+                errors.append(f"{context}: 绑定了角色设定图 {asset_id}（T1），但参考声明主语不是角色")
+            elif tpl == "T2" and re.match(r"^(?:角色|人物|场景|故事板|故事分镜图|调度图)", pos_subject):
+                errors.append(f"{context}: 绑定了道具设定图 {asset_id}（T2），但参考声明主语不是道具")
+            elif tpl in {"T3", "T4", "T5"} and re.match(r"^(?:角色|人物|道具|故事板|故事分镜图)", pos_subject):
+                errors.append(f"{context}: 绑定了场景参考图 {asset_id}（{tpl}），但参考声明主语不是场景")
+            elif tpl in {"T6", "T6B"} and re.match(r"^(?:角色|人物|道具|场景)", pos_subject):
+                errors.append(f"{context}: 绑定了故事板 {asset_id}（{tpl}），但参考声明主语不是故事板或关键帧")
+        elif asset_id.startswith("CHAR-") and asset_id in groups["characters"]:
+            char_name = groups["characters"][asset_id]["name"]
+            other_names = [
+                c["name"] for cid, c in groups["characters"].items()
+                if cid != asset_id and c["name"] != char_name
+            ]
+            if re.match(r"^(?:场景|故事板|故事分镜图|调度图|道具)", pos_subject):
+                errors.append(f"{context}: 绑定了角色资产 {asset_id}（{char_name}），但参考声明主语不是角色")
+            elif char_name not in pos_subject and any(other in pos_subject for other in other_names):
+                errors.append(f"{context}: 绑定了角色 {char_name}（{asset_id}），但参考声明指向了其他角色")
+        elif asset_id.startswith("SCENE-") and asset_id in groups["scenes"]:
+            scene_name = groups["scenes"][asset_id]["name"]
+            other_names = [
+                s["name"] for sid, s in groups["scenes"].items()
+                if sid != asset_id and s["name"] != scene_name
+            ]
+            if re.match(r"^(?:角色|人物|道具|故事板|故事分镜图)", pos_subject):
+                errors.append(f"{context}: 绑定了场景资产 {asset_id}（{scene_name}），但参考声明主语不是场景")
+            elif scene_name not in pos_subject and any(other in pos_subject for other in other_names):
+                errors.append(f"{context}: 绑定了场景 {scene_name}（{asset_id}），但参考声明指向了其他场景")
+        elif asset_id.startswith("PROP-") and asset_id in groups["props"]:
+            prop_name = groups["props"][asset_id]["name"]
+            other_names = [
+                p["name"] for pid, p in groups["props"].items()
+                if pid != asset_id and p["name"] != prop_name
+            ]
+            if re.match(r"^(?:角色|人物|场景|故事板|故事分镜图)", pos_subject):
+                errors.append(f"{context}: 绑定了道具资产 {asset_id}（{prop_name}），但参考声明主语不是道具")
+            elif prop_name not in pos_subject and any(other in pos_subject for other in other_names):
+                errors.append(f"{context}: 绑定了道具 {prop_name}（{asset_id}），但参考声明指向了其他道具")
+
+    for character in groups["characters"].values():
+        role_pattern = r"(?m)^[ \t]*角色" + re.escape(character["name"]) + r"(?:[（(][^）)\n]*[）)])?[：:][^\r\n]+"
+        for role_line in re.finditer(role_pattern, prompt["text"]):
+            non_voice_line = re.sub(
+                r"(?:声音身份|声音|音色|声线)[ \t]*(?:参考|绑定)[ \t]*@(?:素材|图片)[1-9]\d*",
+                "",
+                role_line.group(),
+            )
+            for slot in re.findall(r"@(?:素材|图片)[1-9]\d*", non_voice_line):
+                bound_id = binding_by_slot.get(slot)
+                if bound_id is None or bound_id.startswith("VOICE-"):
+                    continue
+                valid_owner = (
+                    bound_id == character["id"]
+                    or (bound_id in groups["prompts"] and character["id"] in groups["prompts"][bound_id]["asset_ids"])
+                )
+                if not valid_owner:
+                    errors.append(
+                        f"{prompt_id}: 角色{character['name']}的视觉参考槽 {slot} 指向了非本角色资产 {bound_id}，请核对多人同框或角色素材绑定防串脸"
+                    )
+    for prop in groups["props"].values():
+        prop_pattern = r"(?m)^[ \t]*道具" + re.escape(prop["name"]) + r"(?:[（(][^）)\n]*[）)])?[：:][^\r\n]+"
+        for prop_line in re.finditer(prop_pattern, prompt["text"]):
+            for slot in re.findall(r"@(?:素材|图片)[1-9]\d*", prop_line.group()):
+                bound_id = binding_by_slot.get(slot)
+                if bound_id is None:
+                    continue
+                valid_owner = (
+                    bound_id == prop["id"]
+                    or (bound_id in groups["prompts"] and prop["id"] in groups["prompts"][bound_id]["asset_ids"])
+                )
+                if not valid_owner:
+                    errors.append(
+                        f"{prompt_id}: 道具{prop['name']}的视觉参考槽 {slot} 指向了非本道具资产 {bound_id}"
+                    )
+    for scene in groups["scenes"].values():
+        scene_pattern = r"(?m)^[ \t]*场景" + re.escape(scene["name"]) + r"(?:[（(][^）)\n]*[）)])?[：:][^\r\n]+"
+        for scene_line in re.finditer(scene_pattern, prompt["text"]):
+            for slot in re.findall(r"@(?:素材|图片)[1-9]\d*", scene_line.group()):
+                bound_id = binding_by_slot.get(slot)
+                if bound_id is None:
+                    continue
+                valid_owner = (
+                    bound_id == scene["id"]
+                    or (bound_id in groups["prompts"] and scene["id"] in groups["prompts"][bound_id]["asset_ids"])
+                )
+                if not valid_owner:
+                    errors.append(
+                        f"{prompt_id}: 场景{scene['name']}的视觉参考槽 {slot} 指向了非本场景资产 {bound_id}"
+                    )
+    return errors, warnings
+
+
 def validate_voice_media(data, media_root):
     """Check registered local audio bytes; this does not verify speech identity or quality."""
     shape_errors = validate_shape(data)
@@ -972,6 +1112,9 @@ def validate_project(data, previous=None, *, source_text=None, shared_assets=Non
         used_slots = set(re.findall(r"@(?:素材|图片)[1-9]\d*", prompt["text"]))
         if used_slots != set(slots):
             errors.append(f"{prompt_id}: 正文素材位与 reference_bindings 不一致")
+        visual_errors, visual_warnings = _validate_visual_bindings(data, prompt, shot, groups)
+        errors.extend(visual_errors)
+        warnings.extend(visual_warnings)
         voice_errors, voice_warnings = _validate_voice_bindings(data, prompt, shot, groups)
         errors.extend(voice_errors)
         warnings.extend(voice_warnings)

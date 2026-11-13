@@ -12,7 +12,7 @@ python -B -X utf8 scripts/qc_check.py prompt.txt --mode dynamic --duration 10
 
 | 输入或选项 | 行为 |
 |---|---|
-| `.json`或`--project` | 完整项目QC；JSON模式使用记录内的template/duration |
+| `.json`或`--project` | 完整项目QC：校验Schema、依赖快照、台词与时间轴、视觉/声音参考槽归属防串脸、不可变五官骨相DNA与跨镜声线一致性 |
 | 目录 | 递归扫描`.md/.txt`，跳过`SKILL.md`；目录内JSON须另行检查 |
 | 无路径 | 读取stdin；项目输入须加`--project` |
 | `--mode auto/static/dynamic` | 文本检查模式 |

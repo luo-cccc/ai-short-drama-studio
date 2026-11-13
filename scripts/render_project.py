@@ -50,15 +50,27 @@ def build_wan_visual_prompt(prompt_text: str, voice_slots=()) -> str:
     voice_slot_pattern = "|".join(re.escape(slot) + r"(?!\d)" for slot in voice_slots)
     def has_visible_face(body):
         body = re.sub(r'“[^”]*”|"[^"\n]*"', "", body)
-        body = re.sub(r"(?:不露|未露|看不到|不显示|不出现)[^，。；\n]{0,8}(?:面部|脸部|正脸|侧脸|五官|嘴部|脸)|(?:面部|脸部|五官|嘴部)不入画", "", body)
-        return bool(re.search(r"脸|面部|面庞|眼|眉|瞳|唇|嘴|头顶|全身|中景|中近景|全景|远景", body))
+        body = re.sub(
+            r"(?:不露|未露|看不到|不显示|不出现)[^，。；\n]{0,8}(?:面部|脸部|正脸|侧脸|五官|嘴部|脸)|(?:面部|脸部|五官|嘴部)不入画",
+            "",
+            body,
+        )
+        if re.search(r"纯手部|仅拍手|仅见手|手部微距|只有手部|掌心特写|纯足部|仅拍脚|足部微距|纯脚部|纯背影|全程背影", body):
+            if not re.search(r"正脸|侧脸|面部|面庞|面容|眼|眉|瞳|唇|嘴", body):
+                return False
+        return bool(
+            re.search(
+                r"脸|面部|面庞|面容|五官|眼|眉|瞳|眸|鼻|唇|嘴|下颌|额头|脸颊|目光|眼神|神情|神色|表情|头顶|全身|中景|中近景|全景|远景",
+                body,
+            )
+        )
 
     shot_rows = list(re.finditer(r"(?m)^[ \t]*镜头[1-9]\d*[（(]", prompt_text))
     visibility = [has_visible_face(prompt_text[row.start():shot_rows[number + 1].start() if number + 1 < len(shot_rows) else len(prompt_text)])
                   for number, row in enumerate(shot_rows)]
     face_visible = any(visibility) if visibility else has_visible_face(prompt_text)
     current_face_visible, shot_index = face_visible, -1
-    face_clause_re = re.compile(r"窄脸|圆脸|方脸|瓜子脸|鹅蛋脸|五官|眉|瞳孔|眼|鼻|唇")
+    face_clause_re = re.compile(r"窄脸|圆脸|方脸|瓜子脸|鹅蛋脸|五官|眉|瞳孔|眼|鼻|唇|面容|骨相|下颌|泪痣")
 
     out_lines: list[str] = []
     skip_cont = False
@@ -266,7 +278,9 @@ def render_documents(data):
         for prompt_id in shot["static_prompt_ids"]:
             prompt = index[prompt_id]
             if prompt["shot_id"] is None:
-                lines.append(f"空间图复用声明：复用 {prompt_id}，见 project.md 静态资产总库。")
+                reuse_labels = {"T1": "角色设定图复用声明", "T2": "道具设定图复用声明", "T3": "空间图复用声明", "T4": "空间图复用声明", "T5": "空间图复用声明"}
+                reuse_label = reuse_labels.get(prompt["template"], "全局静态资产复用声明")
+                lines.append(f"{reuse_label}：复用 {prompt_id}，见 project.md 静态资产总库。")
             else:
                 lines.extend([f"### {prompt_id} · {prompt['template']}\n", prompt_block(prompt)])
         dynamic = index[shot["dynamic_prompt_id"]]

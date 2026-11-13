@@ -2,7 +2,7 @@
 name: sd-dynamic-video
 description: 将短剧分镜设计转为视频提示词及声音文本，按角色绑定视频模型的声音参考。用于文生、图生、混合参考模式的镜头、动作、声音与时长编排；本模块不调用视频或语音生成服务。
 metadata:
-  version: "V18.2"
+  version: "V18.3"
   agent_created: true
 ---
 

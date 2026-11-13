@@ -120,7 +120,7 @@ def _reference_scope(declaration: str) -> tuple[bool, str, set[str]]:
     inline_exclusion = re.compile(r"除[^，。；;\n]*?(?:之外|以外|外)")
     for sentence in re.split(r"[。！？!?\n]", declaration):
         scope = "positive"
-        for clause in re.split(r"[，；;]", sentence):
+        for clause in re.split(r"[，,；;]", sentence):
             clause = clause.strip()
             if not clause:
                 continue
@@ -133,9 +133,45 @@ def _reference_scope(declaration: str) -> tuple[bool, str, set[str]]:
             elif scope == "positive":
                 raw_positive.append(clause)
                 positive.append(inline_exclusion.sub("", clause))
-    subject = re.search(r"故事分镜图|故事板|调度图|场景|角色|人物|道具", raw_positive[0] if raw_positive else "")
-    scene = bool(subject and subject.group() in {"场景", "故事板", "故事分镜图", "调度图"})
+    subject = re.search(
+        r"故事分镜图|故事板|九宫格关键帧|关键帧结构切片|结构切片|调度图|场景|角色|人物|道具",
+        raw_positive[0] if raw_positive else "",
+    )
+    scene = bool(
+        subject
+        and subject.group() in {"场景", "故事板", "故事分镜图", "九宫格关键帧", "关键帧结构切片", "结构切片", "调度图"}
+    )
     return scene, "，".join(positive), excluded
+
+
+def _reference_attribute_conflicts(declaration: str) -> tuple[set[str], bool]:
+    """检测角色/道具/故事板参考声明中正向继承项与禁止继承项是否自相矛盾，以及故事板/结构切片是否误正向继承人物五官。"""
+    positive_clauses, excluded_clauses = [], []
+    negative_start = re.compile(r"^(?:禁止\s*继承|不取|不继承|不参考|不包含|不采纳|禁止参考|排除|不使用)")
+    positive_start = re.compile(r"^(?:(?:并|同时|继续)?(?:继承|参考|采用|沿用|保留|只取|取)|但|却|然而|仍)")
+    inline_exclusion = re.compile(r"除[^，。；;\n]*?(?:之外|以外|外)")
+    for sentence in re.split(r"[。！？!?\n]", declaration):
+        scope = "positive"
+        for clause in re.split(r"[，,；;]", sentence):
+            clause = clause.strip()
+            if not clause:
+                continue
+            if negative_start.match(clause):
+                scope = "excluded"
+            elif positive_start.match(clause):
+                scope = "positive"
+            if scope == "excluded":
+                excluded_clauses.append(clause)
+            elif scope == "positive":
+                positive_clauses.append(inline_exclusion.sub("", clause))
+    pos_text = "，".join(positive_clauses)
+    exc_text = "，".join(excluded_clauses)
+    check_terms = ("服装", "服饰", "发型", "五官", "体型", "动作", "表情", "构图", "景别")
+    conflicts = {term for term in check_terms if term in pos_text and term in exc_text}
+    first_clause = positive_clauses[0] if positive_clauses else ""
+    is_board_or_slice = bool(re.search(r"故事分镜图|故事板|九宫格关键帧|调度图|结构切片|关键帧切片", first_clause))
+    board_claims_face = is_board_or_slice and bool(re.search(r"五官|面容|脸型", pos_text))
+    return conflicts, board_claims_face
 
 
 def _is_voice_reference(declaration: str) -> bool:
@@ -316,6 +352,15 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
             inherited = {word for word in ("画面风格", "光影", "色彩") if word in ref_what}
             if mode == "static" and template != "T6B" and (inherited & excluded):
                 errors.append(f"{slot}静态场景参考的继承项与禁止项冲突")
+        conflicts, board_claims_face = _reference_attribute_conflicts(declaration)
+        if template != "T6B" and conflicts:
+            errors.append(
+                f"{slot}参考声明的继承项与禁止项冲突（同时正向参考与禁止继承：{'、'.join(sorted(conflicts))}）"
+            )
+        if board_claims_face:
+            warns.append(
+                f"{slot}故事板/结构切片参考不宜正向继承人物五官面容，五官骨相须以角色设定参考图为准，防止低清切片或线稿导致换脸"
+            )
     visual_body = re.sub(r'“[^”]*”|"[^"\n]*"', "", body)
     for pattern in PHYSICAL_UNITS:
         for value in re.findall(pattern, visual_body):
@@ -539,25 +584,79 @@ def _lighting_tone(text: str) -> str | None:
 
 
 def _visible_character_clauses(clauses, prompt_text, role_text):
-    """仅对明确的局部/画外协议缩小启发式核对范围，不从词表推断全部可见性。"""
+    """按物理镜头逐段判断可见部位；任一物理镜头露脸则核对完整特征，全片仅局部或纯背影时才缩小核对范围。"""
     if re.match(r"^[ \t]*角色[^：:\n]+[：:]", role_text) and re.search(r"仅画外发声|仅以声音出现|不出镜", role_text):
         return []
-    first_shot = re.search(r"(?m)^[ \t]*镜头1[（(]", prompt_text)
-    if first_shot is None:
+    shot_matches = list(re.finditer(r"(?m)^[ \t]*镜头[1-9]\d*[（(]", prompt_text))
+    if not shot_matches:
         return clauses
-    body = prompt_text[first_shot.start():]
-    body = QUOTED_RE.sub("", body)
-    body = re.sub(r"不露[^，。\n]{0,8}(?:脸|面部)|脸部不入画", "", body)
-    if re.search(r"面部近景|眼部近景|中近景|中景|全景|远景|全身", body):
-        return clauses
-    visible = None
-    if re.search(r"纯手部|仅拍手|仅见手|手部微距", body):
-        visible = r"手|腕|指|袖|肤"
-    elif re.search(r"纯足部|仅拍脚|足部微距|纯脚部", body):
-        visible = r"足|脚|鞋|裤|腿|踝|肤"
-    elif re.search(r"纯背影|全程背影", body):
-        visible = r"背|发|衣|衫|袍|服|外套|鞋"
-    return [item for item in clauses if re.search(visible, item[0])] if visible else clauses
+    seg_bodies = [
+        prompt_text[m.start():shot_matches[i + 1].start() if i + 1 < len(shot_matches) else len(prompt_text)]
+        for i, m in enumerate(shot_matches)
+    ]
+    visible_patterns = []
+    for raw_seg in seg_bodies:
+        seg = QUOTED_RE.sub("", raw_seg)
+        seg = re.sub(r"不露[^，。\n]{0,8}(?:脸|面部)|脸部不入画", "", seg)
+        is_hand = bool(re.search(r"纯手部|仅拍手|仅见手|手部微距", seg))
+        is_foot = bool(re.search(r"纯足部|仅拍脚|足部微距|纯脚部", seg))
+        is_back = bool(re.search(r"纯背影|全程背影", seg))
+        has_explicit_face = bool(re.search(r"面部近景|眼部近景|正脸|侧脸", seg))
+        has_full_or_med = bool(re.search(r"中近景|中景|全景|远景|全身", seg))
+        if has_explicit_face or (has_full_or_med and not (is_hand or is_foot or is_back)):
+            return clauses
+        if not (is_hand or is_foot or is_back):
+            return clauses
+        if is_hand:
+            visible_patterns.append(r"手|腕|指|袖|肤")
+        if is_foot:
+            visible_patterns.append(r"足|脚|鞋|裤|腿|踝|肤")
+        if is_back:
+            visible_patterns.append(r"背|发|衣|衫|袍|服|外套|鞋")
+    combined = "|".join(dict.fromkeys(visible_patterns))
+    return [item for item in clauses if re.search(combined, item[0])] if combined else clauses
+
+
+FACE_DNA_RE = re.compile(
+    r"脸|面|五官|骨相|眉|眼|瞳|眸|鼻|唇|嘴|下颌|颧|额|腮|颊|耳|痣|疤|痕|酒窝|梨涡|胡|须"
+)
+VOICE_TIMBRE_RE = re.compile(
+    r"女中音|女高音|女低音|男中音|男高音|男低音|童声|少年音|少女音|青年音|老年音|老妪|老者|御姐音|叔音|"
+    r"清亮|低沉|沙哑|磁性|磁音|温润|清冷|甜美|醇厚|苍老|稚嫩|脆亮|浑厚"
+)
+
+
+def _split_character_dna_clauses(clauses: list[tuple[str, list[str]]]):
+    """将角色描述拆分为不可变面部骨相DNA子句与可变服饰/发型/身形子句。"""
+    face = [item for item in clauses if FACE_DNA_RE.search(item[0])]
+    other = [item for item in clauses if not FACE_DNA_RE.search(item[0])]
+    return face, other
+
+
+def _is_costume_or_state_variant(prompt_text: str) -> bool:
+    """判断提示词是否显式声明了角色跨服装、战损、湿身或妆造状态变体。"""
+    return bool(
+        re.search(
+            r"禁止\s*继承[^\n。]*?(?:服装|服饰|衣|穿搭|旧发型|旧状态|原图状态)|"
+            r"换装|换穿|改穿|新服装|新服饰|战损|湿身|湿发|染血|便服|夜行衣|喜服|礼服|丧服|铠甲|乔装",
+            prompt_text,
+        )
+    )
+
+
+def _is_prop_state_variant(prompt_text: str) -> bool:
+    """判断提示词是否显式声明了道具跨状态（开合、破损、激活、染血）变体。"""
+    return bool(
+        re.search(
+            r"禁止\s*继承[^\n。]*?(?:闭合|完好|旧状态|原图状态)|"
+            r"打开状态|开启状态|展开状态|破损状态|碎裂|折断|拆解|染血|点亮状态|熄灭状态",
+            prompt_text,
+        )
+    )
+
+
+def _extract_voice_anchors(voice_desc: str) -> list[str]:
+    return list(dict.fromkeys(VOICE_TIMBRE_RE.findall(voice_desc)))
 
 
 def check_project(
@@ -589,6 +688,19 @@ def check_project(
         errors.extend(media_errors)
         warns.extend(media_warnings)
     if isinstance(data, dict) and not validate_shape(data):
+        # 检查全局角色设定是否具备足够的不可变五官骨相 DNA（防止仅写衣服/泛化词导致跨状态换脸）
+        for char in data.get("characters", []):
+            if not isinstance(char, dict):
+                continue
+            desc = str(char.get("description", ""))
+            if "待补充" in desc:
+                continue
+            char_clauses = _extract_dna_clauses(desc)
+            face_clauses, _ = _split_character_dna_clauses(char_clauses)
+            if len(face_clauses) < 2:
+                warns.append(
+                    f"{char.get('id')}（{char.get('name')}）: 全局 description 缺少足够的不可变面部五官/骨相特征（当前仅检出 {len(face_clauses)} 项，建议至少明确脸型骨相、眉眼瞳色、鼻唇或面部标识等2项以上），跨服装或跨状态出资产时极易换脸"
+                )
         # 检查同一场景（scene_ids 相同）相邻分镜的光影冷暖基调是否无故突变
         last_scene_tone: dict[tuple[str, ...], tuple[str, str]] = {}
         prompts_by_id = {
@@ -619,45 +731,94 @@ def check_project(
     shots = {s.get("id"): s for s in data.get("shots", []) if isinstance(s, dict) and isinstance(s.get("id"), str)} if isinstance(data.get("shots"), list) else {}
     characters = {c.get("id"): c for c in data.get("characters", []) if isinstance(c, dict) and isinstance(c.get("id"), str)} if isinstance(data.get("characters"), list) else {}
     props = {p.get("id"): p for p in data.get("props", []) if isinstance(p, dict) and isinstance(p.get("id"), str)} if isinstance(data.get("props"), list) else {}
+    dialogues = {d.get("id"): d for d in data.get("dialogues", []) if isinstance(d, dict) and isinstance(d.get("id"), str)} if isinstance(data.get("dialogues"), list) else {}
+    voices = {v.get("id"): v for v in data.get("voices", []) if isinstance(v, dict) and isinstance(v.get("id"), str)} if isinstance(data.get("voices"), list) else {}
     for prompt in data.get("prompts", []) if isinstance(data.get("prompts"), list) else []:
         if not isinstance(prompt, dict) or not isinstance(prompt.get("text"), str):
             continue
         template = prompt.get("template")
         mode = _mode(prompt["text"], "auto", template)
         errors, warns = check(prompt["text"], mode, prompt.get("duration"), template=template)
-        # 角色与道具跨镜核心外貌 DNA 对账（针对承载全量造型描述的 T1/T2/T6/T6B/T6C/T7/T9）
+        # 角色与道具跨镜核心外貌 DNA 对账（分离不可变面部骨相 DNA 与可变状态/服装覆写）
         if template in {"T1", "T2", "T6", "T6B", "T6C", "T7", "T9"} and isinstance(prompt.get("asset_ids"), list):
             structural_only = template == "T6B"
             for asset_id in prompt["asset_ids"]:
                 if asset_id in characters and template in {"T1", "T6", "T6B", "T6C", "T7", "T9"}:
                     char = characters[asset_id]
                     char_name = str(char.get("name", ""))
-                    subj_match = re.search(rf"(?m)^\s*角色{re.escape(char_name)}[：:][^\n]+", prompt["text"]) if template in {"T7", "T9"} and char_name else None
-                    target_text = subj_match.group(0) if subj_match else prompt["text"]
+                    subj_match = (
+                        re.search(rf"(?m)^\s*角色{re.escape(char_name)}(?:[（(][^）)\n]*[）)])?[：:][^\n]+", prompt["text"])
+                        if char_name
+                        else None
+                    )
+                    if subj_match:
+                        target_text = subj_match.group(0)
+                    else:
+                        target_text = prompt["text"]
+                        for other_id, other_char in characters.items():
+                            other_name = str(other_char.get("name", ""))
+                            if other_id != asset_id and other_name and other_name != char_name:
+                                target_text = re.sub(
+                                    rf"(?m)^\s*角色{re.escape(other_name)}(?:[（(][^）)\n]*[）)])?[：:][^\n]+",
+                                    "",
+                                    target_text,
+                                )
+                                target_text = re.sub(
+                                    rf"(?:角色)?{re.escape(other_name)}(?:[（(][^）)\n]*[）)])?(?:为|是)[^。；;\n]+",
+                                    "",
+                                    target_text,
+                                )
                     clauses = _extract_dna_clauses(str(char.get("description", "")), structural_only=structural_only)
                     if template in {"T6C", "T7", "T9"}:
                         clauses = _visible_character_clauses(clauses, prompt["text"], target_text)
-                    if len(clauses) >= 2:
-                        missing = [
-                            clause for clause, anchors in clauses
-                            if not any(anchor in target_text for anchor in anchors)
-                        ]
-                        if len(missing) > len(clauses) // 2:
-                            warns.append(
-                                f"角色{char_name}（{asset_id}）在提示词中的外观描述与全局设定偏离较大（缺少：{'、'.join(missing[:3])}），请核对人物跨镜外貌一致性"
-                            )
+                    face_clauses, _ = _split_character_dna_clauses(clauses)
+                    missing = [
+                        clause for clause, anchors in clauses
+                        if not any(anchor in target_text for anchor in anchors)
+                    ]
+                    missing_face = [
+                        clause for clause, anchors in face_clauses
+                        if not any(anchor in target_text for anchor in anchors)
+                    ]
+                    is_variant = _is_costume_or_state_variant(prompt["text"])
+                    if template == "T1" and is_variant and not prompt.get("reference_bindings"):
+                        warns.append(
+                            f"角色{char_name}（{asset_id}）的跨状态/换装变体T1未绑定基底角色参考图（@图片1），纯文本重生成极易导致换脸，请绑定原角色T1或面部特写切片以保持跨镜外貌一致性"
+                        )
+                    if (
+                        template in {"T1", "T6", "T6C", "T7", "T9"}
+                        and face_clauses
+                        and len(missing_face) >= (len(face_clauses) + 1) // 2
+                    ):
+                        warns.append(
+                            f"角色{char_name}（{asset_id}）在提示词中的核心面部五官/骨相特征缺失或偏离（缺少：{'、'.join(missing_face[:3])}），跨状态或跨服装时须锁死同一张脸，请核对人物跨镜外貌一致性"
+                        )
+                    elif not (is_variant and not missing_face) and len(clauses) >= 2 and len(missing) > len(clauses) // 2:
+                        warns.append(
+                            f"角色{char_name}（{asset_id}）在提示词中的外观描述与全局设定偏离较大（缺少：{'、'.join(missing[:3])}），请核对人物跨镜外貌一致性"
+                        )
                 elif asset_id in props and template in {"T2", "T6", "T6B", "T6C", "T7", "T9"}:
                     prop = props[asset_id]
                     prop_name = str(prop.get("name", ""))
-                    subj_match = re.search(rf"(?m)^\s*道具{re.escape(prop_name)}[：:][^\n]+", prompt["text"]) if template in {"T7", "T9"} and prop_name else None
+                    subj_match = (
+                        re.search(rf"(?m)^\s*道具{re.escape(prop_name)}(?:[（(][^）)\n]*[）)])?[：:][^\n]+", prompt["text"])
+                        if template in {"T7", "T9"} and prop_name
+                        else None
+                    )
                     target_text = subj_match.group(0) if subj_match else prompt["text"]
                     clauses = _extract_dna_clauses(str(prop.get("description", "")), structural_only=structural_only)
+                    is_prop_variant = _is_prop_state_variant(prompt["text"])
+                    if template == "T2" and is_prop_variant and not prompt.get("reference_bindings"):
+                        warns.append(
+                            f"道具{prop_name}（{asset_id}）的跨状态变体T2未绑定原道具母图（@图片1），纯文本重生成易导致器型改变，请核对道具跨镜一致性"
+                        )
                     if len(clauses) >= 2:
                         missing = [
                             clause for clause, anchors in clauses
                             if not any(anchor in target_text for anchor in anchors)
                         ]
-                        if len(missing) > len(clauses) // 2:
+                        threshold = (len(clauses) * 2) // 3 if is_prop_variant else len(clauses) // 2
+                        if len(missing) > threshold:
                             warns.append(
                                 f"道具{prop_name}（{asset_id}）在提示词中的特征描述与全局设定偏离较大（缺少：{'、'.join(missing[:3])}），请核对道具跨镜一致性"
                             )
@@ -715,6 +876,30 @@ def check_project(
                     actual_lines = [normalize_dialogue(line) for line in quoted_strings(chunk)]
                     if actual_lines != expected_lines:
                         errors.append(f"镜头{stamp['index']}提示词引号内台词与shot.segments台词文字或顺序不一致")
+                # 核对本镜发声角色（无VOICE音频绑定时）是否保持 characters.voice 核心声线特征
+                voice_bound_chars = {
+                    voices[b.get("asset_id")].get("character_id")
+                    for b in (prompt.get("reference_bindings") or [])
+                    if isinstance(b, dict) and b.get("asset_id") in voices
+                }
+                speaking_chars = set()
+                for segment in segments:
+                    if not isinstance(segment, dict):
+                        continue
+                    for delivery in segment.get("lines", []) if isinstance(segment.get("lines"), list) else []:
+                        if not isinstance(delivery, dict):
+                            continue
+                        dlg = dialogues.get(delivery.get("dialogue_id"))
+                        if dlg and dlg.get("kind") in {"dialogue", "os"} and dlg.get("speaker_id") in characters:
+                            speaking_chars.add(dlg["speaker_id"])
+                for spk_id in sorted(speaking_chars - voice_bound_chars):
+                    char = characters[spk_id]
+                    char_name = str(char.get("name", ""))
+                    voice_anchors = _extract_voice_anchors(str(char.get("voice", "")))
+                    if voice_anchors and not any(anchor in prompt["text"] for anchor in voice_anchors):
+                        warns.append(
+                            f"角色{char_name}（{spk_id}）在本镜有台词但动态提示词未体现其设定的核心声线特征（{'/'.join(voice_anchors)}），请核对跨镜声线一致性"
+                        )
         results.append({"path": path, "block": None, "prompt_id": prompt.get("id"), "template": template, "mode": mode, "errors": list(dict.fromkeys(errors)), "warnings": warns, "skipped": False})
     return results
 

@@ -10,14 +10,14 @@
 | [sd-story-development/](sd-story-development/SKILL.md) | 选题、故事优化、导演风格与剧本审阅 |
 | [sd-scriptwriter/](sd-scriptwriter/SKILL.md) | 梗概、人物、大纲与中文场景剧本 |
 | [sd-storyboard/](sd-storyboard/SKILL.md) | 资产节拍、八岗位设计、镜头与声音规划 |
-| [sd-static-assets/](sd-static-assets/SKILL.md) | T1–T6/6B/6C角色、道具、场景、故事板和单帧关键帧提示词 |
-| [sd-dynamic-video/](sd-dynamic-video/SKILL.md) | T7–T9视频提示词及角色声音参考绑定 |
-| [references/](references/production-workflow.md) | 共用制作规则、数据契约与工具说明 |
+| [sd-static-assets/](sd-static-assets/SKILL.md) | T1–T6/6B/6C角色、道具、场景、故事板、单帧首尾帧及跨状态变体提示词 |
+| [sd-dynamic-video/](sd-dynamic-video/SKILL.md) | T7–T9视频提示词、防串脸与角色声音参考绑定 |
+| [references/](references/production-workflow.md) | 共用制作规则、数据契约、跨镜一致性与工具说明 |
 | [schemas/project.schema.json](schemas/project.schema.json) | 制作项目JSON字段契约，支持1.0及1.1 |
-| [scripts/](scripts/) | 数据快照与同步、QC、文档导出、物理切图 |
+| [scripts/](scripts/) | 数据快照与同步、视觉/声音/骨相QC、文档导出、物理切图 |
 | [examples/demo/](examples/demo/project.json) | 《院门线索》两段各5秒的完整数据与源稿交接 |
 | [examples/voice-reference/](examples/voice-reference/README.md) | 1.1声音参考规划；声音为待制作状态 |
-| [tests/](tests/) | 数据、提示词、声音参考、切图和导出回归测试 |
+| [tests/](tests/) | 数据、提示词、跨状态一致性、声音参考、切图和导出回归测试 |
 
 ## 使用入口
 
