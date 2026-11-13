@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:ai-short-drama:project:1.0",
+  "$id": "urn:ai-short-drama:project:1.1",
   "title": "AI短剧结构化项目",
   "description": "字段形状的唯一权威；跨实体关系、覆盖、台词、时长及依赖失效由 project_data.py 校验。",
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": "1.0"
+      "enum": ["1.0", "1.1"]
     },
     "project": {
       "$ref": "#/$defs/project"
@@ -53,6 +53,10 @@
       },
       "minItems": 1
     },
+    "voices": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/voice"}
+    },
     "prompts": {
       "type": "array",
       "items": {
@@ -79,7 +83,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^(?:PRJ|CHAR|SCENE|PROP|BEAT|LINE|SHOT|PROMPT)-[A-Za-z0-9][A-Za-z0-9_-]*$"
+          "pattern": "^(?:PRJ|CHAR|SCENE|PROP|BEAT|LINE|SHOT|PROMPT|VOICE)-[A-Za-z0-9][A-Za-z0-9_-]*$"
         },
         "revision": {
           "type": "integer",
@@ -338,6 +342,20 @@
         "text": {
           "type": "string",
           "pattern": "\\S"
+        },
+        "start": {
+          "type": "number",
+          "description": "发声起点，使用所属 SHOT 的局部时间轴。",
+          "minimum": 0,
+          "maximum": 30,
+          "multipleOf": 0.1
+        },
+        "end": {
+          "type": "number",
+          "description": "发声终点，使用所属 SHOT 的局部时间轴，可延续至后续物理镜头。",
+          "minimum": 0.1,
+          "maximum": 30,
+          "multipleOf": 0.1
         }
       },
       "required": [
@@ -585,6 +603,13 @@
         },
         "notes": {
           "type": "string"
+        },
+        "overlays": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/overlay"
+          },
+          "minItems": 0
         }
       },
       "required": [
@@ -618,12 +643,59 @@
         },
         "asset_id": {
           "type": "string",
-          "pattern": "^(?:CHAR|SCENE|PROP|PROMPT)-[A-Za-z0-9][A-Za-z0-9_-]*$"
+          "pattern": "^(?:CHAR|SCENE|PROP|PROMPT|VOICE)-[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "audio_reference_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
         }
       },
       "required": [
         "slot",
         "asset_id"
+      ],
+      "additionalProperties": false
+    },
+    "overlay": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "in_scene",
+            "post_subtitle",
+            "post_ui",
+            "post_graphic"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 30,
+          "multipleOf": 0.1
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 30,
+          "multipleOf": 0.1
+        },
+        "position": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "method": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "method"
       ],
       "additionalProperties": false
     },
@@ -647,6 +719,7 @@
             "T5",
             "T6",
             "T6B",
+            "T6C",
             "T7",
             "T8",
             "T9"
@@ -672,7 +745,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(?:CHAR|SCENE|PROP)-[A-Za-z0-9][A-Za-z0-9_-]*$"
+            "pattern": "^(?:CHAR|SCENE|PROP|VOICE)-[A-Za-z0-9][A-Za-z0-9_-]*$"
           },
           "minItems": 0,
           "uniqueItems": true
@@ -684,6 +757,9 @@
           },
           "minItems": 0,
           "uniqueItems": true
+        },
+        "audio_reference_profile": {
+          "$ref": "#/$defs/audio_reference_profile"
         },
         "text": {
           "type": "string",
@@ -709,6 +785,66 @@
         "text",
         "depends_on"
       ],
+      "additionalProperties": false
+    },
+    "voice_master": {
+      "type": ["object", "null"],
+      "properties": {
+        "path": {"type": "string", "pattern": "\\S"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "duration": {"type": "number", "exclusiveMinimum": 0},
+        "transcript": {"type": "string", "pattern": "\\S"}
+      },
+      "required": ["path", "sha256", "duration", "transcript"],
+      "additionalProperties": false
+    },
+    "voice_reference": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"},
+        "model_id": {"type": "string", "pattern": "\\S"},
+        "path": {"type": "string", "pattern": "\\S"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "duration": {"type": "number", "exclusiveMinimum": 0},
+        "source_start": {"type": "number", "minimum": 0},
+        "source_end": {"type": "number", "exclusiveMinimum": 0},
+        "transcript": {"type": "string", "pattern": "\\S"}
+      },
+      "required": ["id", "model_id", "path", "sha256", "duration", "source_start", "source_end", "transcript"],
+      "additionalProperties": false
+    },
+    "voice": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "pattern": "^VOICE-[A-Za-z0-9][A-Za-z0-9_-]*$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "name": {"type": "string", "pattern": "\\S"},
+        "character_id": {"type": ["string", "null"], "pattern": "^CHAR-[A-Za-z0-9][A-Za-z0-9_-]*$"},
+        "description": {"type": "string", "pattern": "\\S"},
+        "language": {"type": "string", "pattern": "\\S"},
+        "source": {"type": "string", "pattern": "\\S"},
+        "status": {"enum": ["planned", "ready"]},
+        "audition": {"enum": ["unreviewed", "approved", "needs_revision"]},
+        "audition_text": {"type": "string", "pattern": "\\S"},
+        "master": {"$ref": "#/$defs/voice_master"},
+        "references": {"type": "array", "items": {"$ref": "#/$defs/voice_reference"}},
+        "notes": {"type": "string"}
+      },
+      "required": ["id", "revision", "name", "character_id", "description", "language", "source", "status", "audition", "master", "references", "notes"],
+      "additionalProperties": false
+    },
+    "audio_reference_profile": {
+      "type": "object",
+      "properties": {
+        "model_id": {"type": "string", "pattern": "\\S"},
+        "supports_voice_reference": {"type": "boolean"},
+        "max_files": {"type": ["integer", "null"], "minimum": 0},
+        "max_file_duration": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "max_total_duration": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "formats": {"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9]+$"}, "uniqueItems": true},
+        "source": {"type": "string", "pattern": "\\S"}
+      },
+      "required": ["model_id", "supports_voice_reference", "max_files", "max_file_duration", "max_total_duration", "formats", "source"],
       "additionalProperties": false
     }
   }

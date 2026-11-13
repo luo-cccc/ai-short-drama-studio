@@ -87,6 +87,30 @@ class ProjectSchemaTests(unittest.TestCase):
         self.assert_shape_error(lambda d: d["beats"][0].update(source_ref="   "), "beats[0].source_ref")
         self.assert_shape_error(lambda d: d["dialogues"][0].update(source_ref=123), "dialogues[0].source_ref")
 
+    def test_t6c_template_and_shot_overlays_match_schema(self):
+        data = copy.deepcopy(self.demo)
+        data["prompts"][1]["template"] = "T6C"
+        data["shots"][0]["overlays"] = [
+            {
+                "kind": "in_scene",
+                "text": "林氏旧宅",
+                "start": 0.0,
+                "end": 5.0,
+                "position": "门楣牌匾",
+                "method": "美术资产生成并后期锁定",
+            },
+            {
+                "kind": "post_ui",
+                "text": "线索进度 1/3",
+                "method": "后期合成",
+            },
+        ]
+        self.assertEqual([], validate_shape(data))
+        self.assert_shape_error(
+            lambda d: d["shots"][0].update(overlays=[{"kind": "invalid", "text": "x", "method": "y"}]),
+            "overlays[0].kind",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,7 +12,8 @@ from scripts.project_data import (
     validate_project, validate_shared_assets, validate_source_script,
 )
 from scripts.qc_check import extract_prompt_blocks, scan_document
-from scripts.render_project import export_project, render_documents
+from scripts.render_project import build_wan_visual_prompt, export_project, render_documents
+from scripts.slice_grid import RawImage, main as slice_grid_main, read_png_stdlib, slice_image, write_png_stdlib
 
 DEMO = Path(__file__).resolve().parents[1] / "examples" / "demo" / "project.json"
 PREPRODUCTION = Path(__file__).resolve().parents[1] / "examples" / "demo" / "preproduction.md"
@@ -107,8 +108,12 @@ class ProjectDataTests(unittest.TestCase):
         self.data["prompts"][0]["text"] = self.data["prompts"][0]["text"].replace("--ar 9:16", "--ar 16:9")
         self.assertIn("画幅须在末行唯一声明 --ar 9:16", self.errors())
         board = next(p for p in self.data["prompts"] if p["template"] == "T6B")
-        board["text"] = board["text"].replace("--ar 16:9", "--ar 9:16")
-        self.assertIn("画幅须在末行唯一声明 --ar 16:9", self.errors())
+        board["text"] = board["text"].replace("--ar 9:16", "--ar 16:9")
+        self.assertIn("画幅须在末行唯一声明 --ar 9:16", self.errors())
+        char_sheet = deepcopy(self.data["prompts"][0])
+        char_sheet.update(id="PROMPT-CHAR-001", template="T1", asset_ids=["CHAR-WANQING"], reference_bindings=[], text="生成角色参考图。\n--ar 9:16")
+        self.data["prompts"].append(char_sheet)
+        self.assertIn("PROMPT-CHAR-001: 画幅须在末行唯一声明 --ar 16:9", self.errors())
 
     def test_dependency_cycle_is_rejected(self):
         first, second = self.data["prompts"][:2]
@@ -244,9 +249,52 @@ class ProjectDataTests(unittest.TestCase):
             extracted = json.loads(extracted_out.getvalue())
             self.assertEqual(len(extracted["dialogues"]), 2)
 
+            scaffold_path = temp_dir / "scaffold.json"
+            with redirect_stdout(io.StringIO()):
+                status = project_data_main(["extract-script", str(PREPRODUCTION), "--scaffold", "--output", str(scaffold_path)])
+            self.assertEqual(status, 0)
+            scaffold_data = load_project(scaffold_path)
+            self.assertEqual(
+                validate_project(scaffold_data, source_text=PREPRODUCTION.read_text(encoding="utf-8"))[0],
+                [],
+            )
+
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as ctx:
                 project_data_main(["capture", str(captured_path), "--in-place"])
             self.assertEqual(ctx.exception.code, 2)
+
+    def test_shot_overlays_validation_and_export(self):
+        data = deepcopy(self.data)
+        data["shots"][0]["overlays"] = [
+            {
+                "kind": "in_scene",
+                "text": "旧院门牌",
+                "start": 0.5,
+                "end": 4.5,
+                "position": "入口门框上方",
+                "method": "实景资产渲染",
+            },
+            {
+                "kind": "post_subtitle",
+                "text": "第一集：旧锁新痕",
+                "method": "后期叠字",
+            },
+        ]
+        data["shots"][0]["revision"] += 1
+        rebuilt = snapshot_dependencies(data)
+        self.assertEqual(validate_project(rebuilt)[0], [])
+        shot_md = render_documents(rebuilt)["SHOT-001_分镜.md"]
+        self.assertIn("### 画内文字与后期叠字", shot_md)
+        self.assertIn("| 画内文字 | 0.5–4.5s | 入口门框上方 | 实景资产渲染 | 旧院门牌 |", shot_md)
+        self.assertIn("| 后期字幕 | 全镜/未标定 | 未指定 | 后期叠字 | 第一集：旧锁新痕 |", shot_md)
+
+        unpaired = deepcopy(rebuilt)
+        unpaired["shots"][0]["overlays"][0].pop("end")
+        self.assertIn("start/end 必须成对填写", self.errors(snapshot_dependencies(unpaired)))
+
+        over_dur = deepcopy(rebuilt)
+        over_dur["shots"][0]["overlays"][0]["end"] = 6.0
+        self.assertIn("不得超过分镜 duration", self.errors(snapshot_dependencies(over_dur)))
 
 
 class ExportTests(unittest.TestCase):
@@ -433,6 +481,63 @@ class ExportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "非托管"):
                 export_project(self.data, output)
             self.assertEqual(stale.read_text(encoding="utf-8"), "同名新文档")
+
+    def test_export_includes_wan_pure_visual_block_without_polluting_qc_blocks(self):
+        documents = render_documents(self.data)
+        shot_doc = documents["SHOT-001_分镜.md"]
+        self.assertIn("### 即梦 Seedance 全模态版", shot_doc)
+        self.assertIn("### 万相 Wan 纯视觉首尾帧适配版", shot_doc)
+        self.assertIn("```wan\n", shot_doc)
+        wan_text = build_wan_visual_prompt(
+            next(p["text"] for p in self.data["prompts"] if p["id"] == "PROMPT-VIDEO-001")
+        )
+        self.assertNotIn("@素材", wan_text)
+        self.assertNotIn("环境音：", wan_text)
+        self.assertNotIn("BGM：", wan_text)
+        self.assertNotIn("门锁换过了", wan_text)
+        self.assertIn("嘴唇自然开合完成说话动作", wan_text)
+
+        # 纯手部特写（全程不露脸）时，万相纯视觉版自动过滤不可见五官词，防止拉远露脸
+        hand_only_prompt = "\n".join([
+            "生成一段单镜头5秒的悬疑短片，同步生成环境音，音效，配音与背景音乐，音画口型同步。画面纯净，无字幕。",
+            "角色晚晴：参考@素材1，年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋。",
+            "镜头1（0.0-5.0s）：纯手部微距特写，五指平稳托住铜钥匙，衣袖贴合手腕。",
+            "--ar 9:16",
+        ])
+        hand_wan = build_wan_visual_prompt(hand_only_prompt)
+        self.assertNotIn("窄脸", hand_wan)
+        self.assertNotIn("平直眉", hand_wan)
+        self.assertNotIn("深棕瞳孔", hand_wan)
+        self.assertIn("灰蓝长衫", hand_wan)
+
+    def test_slice_grid_stdlib_png_slicing_for_grid_and_t1_modes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temp_dir = Path(temporary)
+            width, height = 90, 160
+            rows = [bytes([((x + y) % 256) for x in range(width) for _ in range(3)]) for y in range(height)]
+            src_png = temp_dir / "board.png"
+            write_png_stdlib(RawImage(width, height, 3, 8, rows), src_png)
+            decoded = read_png_stdlib(src_png)
+            self.assertEqual((decoded.width, decoded.height, decoded.channels), (width, height, 3))
+
+            grid_out = temp_dir / "grid_slices"
+            manifest = slice_image(src_png, grid_out, mode="grid", rows=3, cols=3, trim=0.02)
+            self.assertEqual(len(manifest["slices"]), 9)
+            self.assertEqual(manifest["first_frame"], "Shot_01.png")
+            self.assertEqual(manifest["last_frame"], "Shot_09.png")
+            self.assertTrue((grid_out / "Shot_01.png").is_file())
+            self.assertTrue((grid_out / "Shot_09.png").is_file())
+            self.assertTrue((grid_out / "slice-manifest.json").is_file())
+
+            t1_png = temp_dir / "char_t1.png"
+            write_png_stdlib(RawImage(160, 90, 3, 8, [bytes([128] * (160 * 3)) for _ in range(90)]), t1_png)
+            t1_out = temp_dir / "t1_slices"
+            with redirect_stdout(io.StringIO()):
+                rc = slice_grid_main([str(t1_png), "--output", str(t1_out), "--mode", "t1"])
+            self.assertEqual(rc, 0)
+            t1_manifest = json.loads((t1_out / "slice-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(t1_manifest["body_views"]), 3)
+            self.assertEqual(len(t1_manifest["head_views"]), 4)
 
 
 if __name__ == "__main__":

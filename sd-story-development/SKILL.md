@@ -28,4 +28,4 @@ metadata:
 - Type A/B/C/D表示叙事路线，与写实、2D、3D等视觉形态分开。
 - 选题和故事建议使用“保留／修订／换方向”；剧本审阅使用“可交接／待修订／待补材料”，都注明范围与依据。
 
-进入制作或回改已制作内容时，按[制作流程](../references/production-workflow.md)更新源稿与交接记录。字段与程序检查见[项目数据与工具](../references/project-data.md)。
+进入制作或回改已制作内容时，按[制作流程](../references/production-workflow.md)更新源稿与交接记录。字段见[数据契约](../references/project-data.md)，程序检查见[本地工具](../references/tools.md)。

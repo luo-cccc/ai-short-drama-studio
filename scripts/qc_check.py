@@ -31,9 +31,16 @@ ABSTRACT_EMOTION = ["紧张", "恐惧", "悲伤", "绝望", "愤怒", "惊讶", 
 PHYSICAL_UNITS = [r"\d+\s*m/s", r"\d+\s*kg", r"\d+\s*lux", r"\d+\s*dB", r"\d+\s*赫兹", r"光比\s*1[:：]", r"头身比", r"身高\s*\d", r"每秒\s*\d", r"\d+\s*cm", r"\d+\s*米", r"\d+\s*秒速", r"ISO\s*\d", r"快门"]
 COMPASS_PATTERNS = [r"坐北朝南", r"坐南朝北", r"朝[南北东西]", r"[南北东西](?:墙|侧|面|边)", r"[东西][南北]角", r"画面[左右]侧?（[东南西北]）"]
 SPEED_NONSTD_HINT = {"放缓": "平缓", "滞缓": "缓慢", "骤急速": "急促", "慵懒": "平缓", "徐徐": "缓慢", "迟缓": "缓慢", "飞快": "快速", "极快": "急促"}
-TEMPLATE_RE = re.compile(r"(?:\bTemplate\s*|\bT|模板\s*)([1-9]B?)(?=$|[^A-Za-z0-9])", re.I)
+TEMPLATE_RE = re.compile(r"(?:\bTemplate\s*|\bT|模板\s*)([1-9][BC]?)(?=$|[^A-Za-z0-9])", re.I)
 SLOT_RE = re.compile(r"@(?:素材|图片)\d+")
 STAMP_RE = re.compile(r"镜头([1-9]\d*)（((?:0|[1-9]\d*)\.\d)-((?:0|[1-9]\d*)\.\d)s）：")
+QUOTED_RE = re.compile(r'“([^”]*)”|"([^"\n]*)"')
+# 编号、占位编号和括号/冒号具有声明特征；“镜头继续推进”等是正文续行。
+STAMP_ROW_RE = re.compile(
+    r"(?m)^[ \t]*(镜头(?=[ \t]*(?:\d|[A-Za-z]+(?=[ \t（(:：]|$)|"
+    r"第[ \t]*(?:\d+|[A-Za-z]+|[零〇一二三四五六七八九十百千万两壹贰叁肆伍陆柒捌玖拾佰仟]+)[ \t]*(?=[（(:：]|$)|"
+    r"[零〇一二三四五六七八九十百千万两壹贰叁肆伍陆柒捌玖拾佰仟]+(?=[ \t（(:：]|$)|[（(:：]|$))[^\n]*)"
+)
 
 
 def strip_ar(text: str) -> str:
@@ -46,7 +53,7 @@ def count_words(text: str) -> int:
 
 
 def quoted_strings(text: str) -> list[str]:
-    return [m.group(1) if m.group(1) is not None else m.group(2) for m in re.finditer(r'“([^”]*)”|"([^"\n]*)"', text)]
+    return [m.group(1) if m.group(1) is not None else m.group(2) for m in QUOTED_RE.finditer(text)]
 
 
 def clip_quoted(text: str) -> str:
@@ -131,6 +138,14 @@ def _reference_scope(declaration: str) -> tuple[bool, str, set[str]]:
     return scene, "，".join(positive), excluded
 
 
+def _is_voice_reference(declaration: str) -> bool:
+    """声音身份声明不参加场景、外观或光影继承检查。"""
+    positive = re.split(r"禁止\s*继承|不继承|不参考|不包含|不采纳|禁止参考|排除|不使用", declaration, maxsplit=1)[0]
+    if re.match(r"\s*(?:场景|故事板|故事分镜图|调度图|道具)", positive):
+        return False
+    return bool(re.search(r"声音身份|音色|声线|人声|声音参考", positive))
+
+
 def _template(text: str) -> str | None:
     match = TEMPLATE_RE.search(text)
     return "T" + match.group(1).upper() if match else None
@@ -178,7 +193,9 @@ def _check_t6b_references(text: str) -> tuple[list[str], list[str]]:
 def parse_timestamps(text: str, duration: float | None = None) -> tuple[list[dict], list[str]]:
     """严格解析每个镜头行；坏格式返回诊断，不尝试 float('...')。"""
     errors, stamps = [], []
-    rows = list(re.finditer(r"(?m)^\s*(镜头[^\n]*)", text))
+    quoted_ranges = [match.span() for match in QUOTED_RE.finditer(text)]
+    rows = [row for row in STAMP_ROW_RE.finditer(text)
+            if not any(start <= row.start(1) < end for start, end in quoted_ranges)]
     if not rows:
         return [], ["动态描述词未检测到镜头时间戳：镜头N（0.0-5.0s）："]
     for row in rows:
@@ -232,7 +249,8 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
             errors.append(f"禁用标点「{p}」出现在台词/OS/NAR引号内（{name}）")
     if re.search(ELLIPSIS_BAD_PATTERN, quoted):
         errors.append("台词/OS/NAR须使用中文六点省略号……")
-    if "、" in body and "、" not in quoted:
+    non_ref_body = re.sub(r"(?m)^\s*@(?:素材|图片)\d+\s+参考[^\n]*", "", body)
+    if "、" in non_ref_body and "、" not in quoted:
         warns.append("正文出现顿号，独立视觉元素建议用中文逗号分隔")
     if re.search(r"(?<!-)--(?!ar)|---", body):
         errors.append("英文破折号--/---出现在描述词，请使用中文——")
@@ -256,11 +274,38 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
             errors.append(f"素材位{slot}重复声明")
     for slot in sorted(set(SLOT_RE.findall(text)) - set(declarations)):
         errors.append(f"素材位{slot}被使用但没有独立参考声明")
-    if template == "T6B":
-        reference_errors, reference_warnings = _check_t6b_references(text)
-        errors.extend(reference_errors)
-        warns.extend(reference_warnings)
+    if template in {"T6", "T6B"}:
+        shot_cells = re.findall(r"(?m)^\s*Shot\s*#([1-9]\d*)[（(]([^）)\n]*)[）)][：:]\s*([^\n]+)", body)
+        if shot_cells:
+            indices = [int(num) for num, _, _ in shot_cells]
+            if indices != list(range(1, 10)):
+                errors.append(f"{template}故事板关键帧须按顺序完整包含Shot #1至Shot #9（当前：{indices}）")
+            last_cell_time, last_cell_num = None, None
+            for num_str, header, _ in shot_cells:
+                time_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:秒|s(?![A-Za-z]))", header)
+                if time_match:
+                    cell_time = Decimal(time_match.group(1))
+                    if last_cell_time is not None and cell_time < last_cell_time:
+                        errors.append(
+                            f"{template}故事板关键帧时间节点倒退：Shot #{num_str}（{cell_time}s）早于Shot #{last_cell_num}（{last_cell_time}s）"
+                        )
+                    last_cell_time, last_cell_num = cell_time, int(num_str)
+            cell_bodies = [desc.strip() for _, _, desc in shot_cells]
+            if len(set(cell_bodies)) < len(cell_bodies):
+                warns.append(f"{template}故事板存在完全重复的Shot关键帧描述；确认是否为合法静止保持，不为填满九格增加剧情、机位或动作")
+        if template == "T6B":
+            reference_errors, reference_warnings = _check_t6b_references(text)
+            errors.extend(reference_errors)
+            warns.extend(reference_warnings)
     for slot, declaration in references:
+        if _is_voice_reference(declaration):
+            if mode != "dynamic":
+                errors.append(f"{slot}声音参考仅用于动态视频提示词，不能绑定静态图片模板")
+            if slot.startswith("@图片"):
+                errors.append(f"{slot}声音参考须使用动态素材位@素材N")
+            if quoted_strings(declaration):
+                errors.append(f"{slot}声音参考声明含引号内试听文本；试听转写留在声音资产中，本镜实际台词写入镜头正文")
+            continue
         scene, ref_what, excluded = _reference_scope(declaration)
         if scene:
             if mode == "dynamic":
@@ -295,8 +340,27 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
             warns.append(f"非标准语速词「{nonstd}」，建议「{std}」")
 
     if mode == "dynamic":
-        _, timestamp_errors = parse_timestamps(text, duration)
+        stamps, timestamp_errors = parse_timestamps(text, duration)
         errors.extend(timestamp_errors)
+        for index, stamp in enumerate(stamps):
+            end_offset = stamps[index + 1]["offset"] if index + 1 < len(stamps) else len(text)
+            chunk = text[stamp["text_offset"]:end_offset]
+            unquoted_chunk = QUOTED_RE.sub("", chunk)
+            sub_intervals = re.findall(r"\b(\d+\.\d+)\s*[–\-~至]\s*(\d+\.\d+)\s*(?:秒|s)", unquoted_chunk)
+            total_dur = stamps[-1]["end"]
+            for sub_start_str, sub_end_str in sub_intervals:
+                sub_start, sub_end = Decimal(sub_start_str), Decimal(sub_end_str)
+                if sub_end < sub_start:
+                    errors.append(f"镜头{stamp['index']}内阶段时间区间倒置：{sub_start_str}–{sub_end_str}s")
+                elif sub_start < stamp["start"] or sub_start >= stamp["end"] or sub_end > total_dur:
+                    errors.append(
+                        f"镜头{stamp['index']}（{stamp['start']}-{stamp['end']}s）内阶段时间区间{sub_start_str}–{sub_end_str}s超出有效时间范围"
+                    )
+            shot_dur = stamp["end"] - stamp["start"]
+            if shot_dur <= Decimal("6.0") and len(sub_intervals) >= 5:
+                warns.append(
+                    f"镜头{stamp['index']}（{shot_dur}s）内含{len(sub_intervals)}个细分时间段，单镜动作密度过高需复核；可合并阶段或延长/拆分，实际承载量以目标模型和返片为准"
+                )
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         emotion = next((i for i, line in enumerate(lines) if line.startswith("整体情绪为")), None)
         if emotion is None:
@@ -342,7 +406,7 @@ def extract_prompt_blocks(text: str) -> tuple[list[dict], list[str]]:
     i = 0
     while i < len(lines):
         line = lines[i]
-        heading = re.match(r"^(#{1,6})\s+(.+)", line)
+        heading = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+)", line)
         if heading:
             level = len(heading.group(1))
             headings = {k: v for k, v in headings.items() if k < level}
@@ -369,12 +433,21 @@ def extract_prompt_blocks(text: str) -> tuple[list[dict], list[str]]:
             i += 1
         closed = i < len(lines)
         body = "\n".join(content)
-        context = " ".join(headings.values())
-        template = (pending or {}).get("template") or _template(context)
+        heading_template, heading_mode = None, "auto"
+        for title in reversed(headings.values()):
+            heading_template = _template(title)
+            if heading_template:
+                break
+            dynamic, static = "动态" in title, "静态" in title
+            if dynamic != static:
+                heading_mode = "dynamic" if dynamic else "static"
+                break
+        template = (pending or {}).get("template") or heading_template
+        mode_hint = language if language in {"static", "dynamic"} else heading_mode
         eligible = language in {"text", "txt", "prompt", "static", "dynamic"} or (not language and (pending is not None or template is not None or _looks_like_prompt(body)))
         if eligible:
-            block = {"text": body, "line": start + 1, "template": template, "prompt_id": (pending or {}).get("id"), "duration": None, "mode_hint": "dynamic" if "动态" in context or language == "dynamic" else "static" if "静态" in context or language == "static" else "auto", "metadata_errors": []}
-            if template and template not in {"T1", "T2", "T3", "T4", "T5", "T6", "T6B", "T7", "T8", "T9"}:
+            block = {"text": body, "line": start + 1, "template": template, "prompt_id": (pending or {}).get("id"), "duration": None, "mode_hint": mode_hint, "metadata_errors": []}
+            if template and template not in {"T1", "T2", "T3", "T4", "T5", "T6", "T6B", "T6C", "T7", "T8", "T9"}:
                 block["metadata_errors"].append(f"未知模板元数据{template}")
             if pending and "duration" in pending:
                 try:
@@ -420,6 +493,73 @@ def scan_file(path: str, mode: str = "auto", duration: float | None = None) -> t
     return path, [f"块{r['block']}：{e}" for r in results for e in r["errors"]], [f"块{r['block']}：{w}" for r in results for w in r["warnings"]]
 
 
+def _extract_dna_clauses(description: str, *, structural_only: bool = False) -> list[tuple[str, list[str]]]:
+    """从角色或道具的全局 description 中提取可核对的核心视觉特征子句及其关键词。"""
+    stop_prefixes = (
+        "年轻", "中年", "老年", "青年", "少年", "东亚", "女性", "男性", "人物", "角色",
+        "身形", "身材", "表面", "散布", "细小", "整体", "一件", "一把", "一枚",
+    )
+    color_words = re.compile(r"黑|白|灰|蓝|红|绿|黄|紫|棕|褐|金|银|铜|青|粉|橙|暗|亮|深|浅")
+    results: list[tuple[str, list[str]]] = []
+    for raw_clause in re.split(r"[，,、；;。！!\n]+", description):
+        clause = raw_clause.strip()
+        if len(clause) < 2:
+            continue
+        cleaned = clause
+        for prefix in stop_prefixes:
+            if cleaned.startswith(prefix) and len(cleaned) > len(prefix) + 1:
+                cleaned = cleaned[len(prefix):]
+        # 提取2字及以上的连续中文特征词根
+        tokens = [t for t in re.findall(r"[\u4e00-\u9fff]{2,}", cleaned) if t not in stop_prefixes]
+        if structural_only:
+            tokens = [
+                re.sub(color_words, "", t) if len(re.sub(color_words, "", t)) >= 2 else t
+                for t in tokens
+                if not color_words.fullmatch(t)
+            ]
+        # 提取尾核心名词（如“长衫”、“布鞋”、“窄脸”、“匙柄”、“齿口”）作为回退匹配锚点
+        anchors = list(dict.fromkeys(tokens))
+        for token in list(tokens):
+            if len(token) >= 3:
+                anchors.append(token[-2:])
+                anchors.append(token[:2])
+        if anchors:
+            results.append((clause, list(dict.fromkeys(a for a in anchors if len(a) >= 2))))
+    return results
+
+
+def _lighting_tone(text: str) -> str | None:
+    cold = bool(re.search(r"冷白|冷光|冷调|冷色|清冷|冷蓝|环境光[^。\n]*?灰蓝", text))
+    warm = bool(re.search(r"暖黄|暖金|暖光|暖调|暖色|夕阳金|橘黄|火光暖", text))
+    if cold and not warm:
+        return "冷调"
+    if warm and not cold:
+        return "暖调"
+    return None
+
+
+def _visible_character_clauses(clauses, prompt_text, role_text):
+    """仅对明确的局部/画外协议缩小启发式核对范围，不从词表推断全部可见性。"""
+    if re.match(r"^[ \t]*角色[^：:\n]+[：:]", role_text) and re.search(r"仅画外发声|仅以声音出现|不出镜", role_text):
+        return []
+    first_shot = re.search(r"(?m)^[ \t]*镜头1[（(]", prompt_text)
+    if first_shot is None:
+        return clauses
+    body = prompt_text[first_shot.start():]
+    body = QUOTED_RE.sub("", body)
+    body = re.sub(r"不露[^，。\n]{0,8}(?:脸|面部)|脸部不入画", "", body)
+    if re.search(r"面部近景|眼部近景|中近景|中景|全景|远景|全身", body):
+        return clauses
+    visible = None
+    if re.search(r"纯手部|仅拍手|仅见手|手部微距", body):
+        visible = r"手|腕|指|袖|肤"
+    elif re.search(r"纯足部|仅拍脚|足部微距|纯脚部", body):
+        visible = r"足|脚|鞋|裤|腿|踝|肤"
+    elif re.search(r"纯背影|全程背影", body):
+        visible = r"背|发|衣|衫|袍|服|外套|鞋"
+    return [item for item in clauses if re.search(visible, item[0])] if visible else clauses
+
+
 def check_project(
     data: dict,
     previous: dict | None = None,
@@ -427,6 +567,7 @@ def check_project(
     *,
     source_text: str | None = None,
     shared_assets: dict | None = None,
+    media_root: str | Path | None = None,
 ) -> list[dict]:
     try:
         from .project_data import normalize_dialogue, validate_project, validate_shape
@@ -439,19 +580,122 @@ def check_project(
     if shared_assets is not None:
         extra_kwargs["shared_assets"] = shared_assets
     errors, warns = validate_project(data, previous=previous, **extra_kwargs)
+    if media_root is not None and isinstance(data, dict) and not validate_shape(data):
+        try:
+            from .project_data import validate_voice_media
+        except ImportError:
+            from project_data import validate_voice_media
+        media_errors, media_warnings = validate_voice_media(data, media_root)
+        errors.extend(media_errors)
+        warns.extend(media_warnings)
+    if isinstance(data, dict) and not validate_shape(data):
+        # 检查同一场景（scene_ids 相同）相邻分镜的光影冷暖基调是否无故突变
+        last_scene_tone: dict[tuple[str, ...], tuple[str, str]] = {}
+        prompts_by_id = {
+            p.get("id"): p for p in data.get("prompts", []) if isinstance(p, dict) and isinstance(p.get("id"), str)
+        }
+        for shot in data.get("shots", []):
+            if not isinstance(shot, dict):
+                continue
+            scene_key = tuple(shot.get("scene_ids", ()))
+            if not scene_key:
+                continue
+            lighting_decisions = " ".join(
+                d.get("decision", "") for d in shot.get("design", []) if isinstance(d, dict) and d.get("role") == "lighting"
+            )
+            dyn_prompt = prompts_by_id.get(shot.get("dynamic_prompt_id"), {})
+            tone = _lighting_tone(lighting_decisions + " " + str(dyn_prompt.get("text", "")))
+            if tone:
+                if scene_key in last_scene_tone:
+                    prev_shot_id, prev_tone = last_scene_tone[scene_key]
+                    if prev_tone != tone:
+                        warns.append(
+                            f"{shot.get('id')}: 与同场景上一镜头 {prev_shot_id} 的光影冷暖基调发生突变（{prev_tone}→{tone}），请核对同场跨镜光影色温一致性"
+                        )
+                last_scene_tone[scene_key] = (str(shot.get("id")), tone)
     results = [{"path": path, "block": None, "mode": "project", "errors": list(errors), "warnings": list(warns), "skipped": False}]
     if not isinstance(data, dict) or validate_shape(data):
         return results
     shots = {s.get("id"): s for s in data.get("shots", []) if isinstance(s, dict) and isinstance(s.get("id"), str)} if isinstance(data.get("shots"), list) else {}
+    characters = {c.get("id"): c for c in data.get("characters", []) if isinstance(c, dict) and isinstance(c.get("id"), str)} if isinstance(data.get("characters"), list) else {}
+    props = {p.get("id"): p for p in data.get("props", []) if isinstance(p, dict) and isinstance(p.get("id"), str)} if isinstance(data.get("props"), list) else {}
     for prompt in data.get("prompts", []) if isinstance(data.get("prompts"), list) else []:
         if not isinstance(prompt, dict) or not isinstance(prompt.get("text"), str):
             continue
         template = prompt.get("template")
         mode = _mode(prompt["text"], "auto", template)
         errors, warns = check(prompt["text"], mode, prompt.get("duration"), template=template)
+        # 角色与道具跨镜核心外貌 DNA 对账（针对承载全量造型描述的 T1/T2/T6/T6B/T6C/T7/T9）
+        if template in {"T1", "T2", "T6", "T6B", "T6C", "T7", "T9"} and isinstance(prompt.get("asset_ids"), list):
+            structural_only = template == "T6B"
+            for asset_id in prompt["asset_ids"]:
+                if asset_id in characters and template in {"T1", "T6", "T6B", "T6C", "T7", "T9"}:
+                    char = characters[asset_id]
+                    char_name = str(char.get("name", ""))
+                    subj_match = re.search(rf"(?m)^\s*角色{re.escape(char_name)}[：:][^\n]+", prompt["text"]) if template in {"T7", "T9"} and char_name else None
+                    target_text = subj_match.group(0) if subj_match else prompt["text"]
+                    clauses = _extract_dna_clauses(str(char.get("description", "")), structural_only=structural_only)
+                    if template in {"T6C", "T7", "T9"}:
+                        clauses = _visible_character_clauses(clauses, prompt["text"], target_text)
+                    if len(clauses) >= 2:
+                        missing = [
+                            clause for clause, anchors in clauses
+                            if not any(anchor in target_text for anchor in anchors)
+                        ]
+                        if len(missing) > len(clauses) // 2:
+                            warns.append(
+                                f"角色{char_name}（{asset_id}）在提示词中的外观描述与全局设定偏离较大（缺少：{'、'.join(missing[:3])}），请核对人物跨镜外貌一致性"
+                            )
+                elif asset_id in props and template in {"T2", "T6", "T6B", "T6C", "T7", "T9"}:
+                    prop = props[asset_id]
+                    prop_name = str(prop.get("name", ""))
+                    subj_match = re.search(rf"(?m)^\s*道具{re.escape(prop_name)}[：:][^\n]+", prompt["text"]) if template in {"T7", "T9"} and prop_name else None
+                    target_text = subj_match.group(0) if subj_match else prompt["text"]
+                    clauses = _extract_dna_clauses(str(prop.get("description", "")), structural_only=structural_only)
+                    if len(clauses) >= 2:
+                        missing = [
+                            clause for clause, anchors in clauses
+                            if not any(anchor in target_text for anchor in anchors)
+                        ]
+                        if len(missing) > len(clauses) // 2:
+                            warns.append(
+                                f"道具{prop_name}（{asset_id}）在提示词中的特征描述与全局设定偏离较大（缺少：{'、'.join(missing[:3])}），请核对道具跨镜一致性"
+                            )
+        if template in {"T6", "T6B"} and isinstance(prompt.get("shot_id"), str) and prompt["shot_id"] in shots:
+            shot = shots[prompt["shot_id"]]
+            try:
+                shot_dur = Decimal(str(shot.get("duration")))
+            except (InvalidOperation, TypeError, ValueError):
+                shot_dur = None
+            seg_map = {}
+            for seg in shot.get("segments", []) if isinstance(shot.get("segments"), list) else []:
+                if isinstance(seg, dict) and isinstance(seg.get("index"), int):
+                    try:
+                        seg_map[seg["index"]] = (Decimal(str(seg.get("start"))), Decimal(str(seg.get("end"))))
+                    except (InvalidOperation, TypeError, ValueError):
+                        pass
+            for num_str, header, _ in re.findall(r"(?m)^\s*Shot\s*#([1-9]\d*)[（(]([^）)\n]*)[）)][：:]\s*([^\n]+)", prompt["text"]):
+                time_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:秒|s(?![A-Za-z]))", header)
+                seg_match = re.search(r"物理镜头\s*([1-9]\d*)", header)
+                cell_time = Decimal(time_match.group(1)) if time_match else None
+                if cell_time is not None and shot_dur is not None and cell_time > shot_dur:
+                    errors.append(f"{template}故事板Shot #{num_str}时间节点（{cell_time}s）超出所属分镜duration（{shot_dur}s）")
+                if seg_match:
+                    seg_idx = int(seg_match.group(1))
+                    if seg_map and seg_idx not in seg_map:
+                        errors.append(f"{template}故事板Shot #{num_str}引用了不存在的物理镜头{seg_idx}")
+                    elif seg_idx in seg_map and cell_time is not None:
+                        s_start, s_end = seg_map[seg_idx]
+                        if not (s_start <= cell_time <= s_end):
+                            warns.append(
+                                f"{template}故事板Shot #{num_str}时间节点（{cell_time}s）超出物理镜头{seg_idx}（{s_start}-{s_end}s）区间，请核对切镜与关键帧时间同步"
+                            )
         if mode == "dynamic" and isinstance(prompt.get("shot_id"), str) and prompt["shot_id"] in shots:
             shot = shots[prompt["shot_id"]]
             stamps, _ = parse_timestamps(prompt["text"], prompt.get("duration"))
+            if stamps and any(match.start() < stamps[0]["offset"]
+                              for match in QUOTED_RE.finditer(prompt["text"])):
+                errors.append("提示词首个镜头之前存在引号内台词/OS/NAR，须归入shot.segments并在对应镜头执行")
             segments = shot.get("segments", [])
             if isinstance(segments, list):
                 if len(stamps) != len(segments):
@@ -484,13 +728,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--previous", help="历史project.json，用于修改与版本追溯检查")
     parser.add_argument("--source", help="源剧本或前期交接Markdown，用于校验源稿与JSON台词及映射一致")
     parser.add_argument("--shared-assets", dest="shared_assets", help="跨集共享资产JSON，用于校验公共角色/场景/道具与全局提示词同步")
+    parser.add_argument("--media-root", help="声音素材根目录；启用本地母版与投喂副本的存在、指纹及可读取时长检查")
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
     if args.duration is not None and (not Decimal(str(args.duration)).is_finite() or not 5 <= args.duration <= 30):
         parser.error("--duration须为5–30秒范围内的有限数值")
     is_project = args.project or bool(args.target and Path(args.target).suffix.lower() == ".json")
-    if (args.previous or args.source or args.shared_assets) and not is_project:
-        parser.error("--previous、--source 与 --shared-assets 仅用于JSON项目输入")
+    if (args.previous or args.source or args.shared_assets or args.media_root) and not is_project:
+        parser.error("--previous、--source、--shared-assets 与 --media-root 仅用于JSON项目输入")
     results = []
     try:
         if is_project:
@@ -508,6 +753,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.target or "<stdin>",
                 source_text=source_text,
                 shared_assets=shared_assets,
+                media_root=args.media_root,
             )
         elif args.target and Path(args.target).is_dir():
             paths = sorted(p for p in Path(args.target).rglob("*") if p.is_file() and p.suffix.lower() in {".md", ".txt"} and p.name != "SKILL.md")

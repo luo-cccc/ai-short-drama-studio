@@ -1,183 +1,105 @@
-# 项目数据与本地工具
+# 项目数据契约
 
-本页说明数据契约、依赖快照、QC和Markdown导出。字段形状以 [project.schema.json](../schemas/project.schema.json) 为准，完整示例见 [project.json](../examples/demo/project.json)，制作约定见 [rule-authority.md](rule-authority.md)。以下命令均在仓库根目录执行，需要Python 3.10+。
+`project.json`保存完整制作数据，Markdown是导出视图。字段、类型和必填项以[Schema](../schemas/project.schema.json)为准；命令见[本地工具](tools.md)，源稿交接见[制作流程](production-workflow.md)。
 
-## 数据组织
+## 实体与版本
 
-项目使用UTF-8 JSON，可带BOM。不接受注释、尾逗号、重复键或NaN、Infinity等非有限数值；Schema中未声明的字段也会报错。
+文件使用UTF-8，可带BOM；不接受注释、尾逗号、重复键、非有限数值或未知字段。`schema_version`支持`1.0`和`1.1`，声音参考字段使用`1.1`。
 
-顶层必须包含`schema_version: "1.0"`、`project`和下表中的七个数组。`scenes`、`beats`、`shots`、`prompts`至少各有一项；`characters`、`props`、`dialogues`可以为空。各实体均有`id`和从1开始的整数`revision`；下表列出其余字段，嵌套结构和具体约束见Schema。
-
-| 数据 | ID前缀 | 字段与用途 |
+| 数据 | ID前缀 | 内容 |
 |---|---|---|
-| project | PRJ- | `title`、`aspect_ratio`、`style`；画幅可选9:16、16:9、2.39:1 |
-| characters | CHAR- | `name`、`description`、`voice`；角色外观与声线 |
-| scenes | SCENE- | `name`、`description`；可复用场景 |
-| props | PROP- | `name`、`description`；可复用道具 |
-| beats | BEAT- | `scene_id`、`summary`、`character_ids`、`prop_ids`，可选`source_ref`；按剧本顺序保存节拍 |
-| dialogues | LINE- | `beat_id`、`speaker_id`、`kind`、`text`，可选`source_ref`；数组定义台词执行顺序 |
-| shots | SHOT- | `title`、`function`、`scene_ids`、`character_ids`、`prop_ids`、`beat_ids`、`duration`、`segments`、`static_prompt_ids`、`dynamic_prompt_id`、`design`、`audio`、`transitions`、`review`、`notes`、`depends_on` |
-| prompts | PROMPT- | `template`、`shot_id`、`duration`、`asset_ids`、`reference_bindings`、`text`、`depends_on` |
+| `project` | PRJ- | 标题、主画幅、风格；画幅可选9:16、16:9、2.39:1 |
+| `characters` | CHAR- | 名称、视觉设定、简短声线摘要`voice` |
+| `scenes` | SCENE- | 可复用物理场景 |
+| `props` | PROP- | 可复用道具 |
+| `beats` | BEAT- | 源稿顺序、场景、动作/信息变化及涉及资产 |
+| `dialogues` | LINE- | 节拍、说话者、类型和原文；数组定义执行顺序 |
+| `shots` | SHOT- | 制作片段、物理镜头、八岗位、声音、转场与审阅状态 |
+| `prompts` | PROMPT- | 模板、所属分镜、资产、参考绑定、正文及依赖快照 |
+| `voices`（1.1可选） | VOICE- | 视频模型的角色声音参考 |
 
-这些字段均需写出，允许为空的值也不能省略。例如`notes`可为`""`，无配音时`lines`为`[]`，静态提示词的`duration`为`null`。ID后缀使用英文字母、数字、下划线和连字符，首字符须为字母或数字；全项目ID唯一，改名和排序不重发ID，内容变更增加`revision`。
+除`voices`外，上述对象和数组均须存在；`scenes`、`beats`、`shots`、`prompts`至少一项，角色、道具和台词可为空。允许空值不等于可省略字段，例如`notes: ""`、`lines: []`、静态提示词`duration: null`。
 
-## 前期交接与数据边界
+实体均有稳定`id`和从1开始的整数`revision`。ID后缀由英文字母、数字、下划线和连字符组成，首字符为字母或数字；全项目唯一，排序或改名不重发ID，内容变更增加版本。
 
-此JSON用于完整制作数据，阶段草稿和源稿交接仍使用Markdown，入口见 [制作全流程](production-workflow.md) 和 [交接示例](../examples/demo/preproduction.md)。脚本不解析这些侧文档，也不追踪其他项目目录或跨集设定；只修改源稿不会触发JSON依赖失效。`review.status`记录`unreviewed`、`needs_revision`或`approved`并用于导出显示，未审查状态不阻止QC或导出。工具生成的是数据和文档，不生成或核验图像、音频、视频文件；JSON检查、专业审查和用户确认分别记录。
-
-## 关系校验
+## 关系与时间
 
 ### 节拍、分镜和提示词
 
-每个beat至少被一个shot的`beat_ids`认领，可拆到多个shot；每个认领分镜都须登记该节拍的场景、角色和道具。检查验证ID覆盖，剧情行动是否完整呈现仍需按制作规范审阅。
-
-每个shot至少引用一条静态提示词，并通过`dynamic_prompt_id`引用唯一归属本镜的动态提示词。静态模板为T1–T6及T6B，动态模板为T7–T9。静态提示词的`shot_id`可为`null`供全局复用，或指向登记它的本镜；动态提示词须指向本镜、时长相同，且`asset_ids`包含本镜全部角色、场景和道具。
-
-`design`是由`role`、`knowledge`、`decision`组成的八项数组，`director`、`camera`、`lighting`、`action`、`staging`、`dialogue`、`sound`、`vfx`各出现一次。不同分镜若完全复用相同的八岗位`decision`，QC会发出WARN提示差异化设计。`audio`包含`ambience`、`music`和`effects`，`transitions`包含`incoming`和`outgoing`，`review`包含`design_id`和`status`；`design_id`使用`9B-`前缀。
+- 每个beat至少由一个shot认领；认领分镜须登记其场景、角色和道具。
+- 每个shot至少引用一条静态提示词，并唯一拥有一条动态提示词。动态时长须与shot一致，`asset_ids`包含本镜角色、场景和道具。
+- 静态模板为T1–T6、T6B及T6C，`shot_id`可为空供全局复用；动态模板为T7–T9，须归属一个shot。
+- `design`由`role`、`knowledge`、`decision`组成，八个role各一次：`director`、`camera`、`lighting`、`action`、`staging`、`dialogue`、`sound`、`vfx`。
+- `audio`包含`ambience`、`music`、`effects`；`transitions`包含`incoming`、`outgoing`；`review`包含`9B-`前缀的`design_id`及`unreviewed/needs_revision/approved`状态。该状态展示于导出文档，不阻止QC或导出。
+- `shots.overlays`（可选）记录画内文字与后期叠字：`kind`（`in_scene/post_subtitle/post_ui/post_graphic`）、`text`、`method`及可选的成对局部时间`start/end`和`position`，导出于分镜文档第五章。
 
 ### 台词与局部时间
 
-`dialogues.kind`为`dialogue`、`os`或`narration`；只有`narration`允许`speaker_id: null`。指定的说话角色须登记在所属节拍及执行该台词的分镜中。
+`dialogues.kind`为`dialogue`、`os`或`narration`，仅`narration`允许`speaker_id: null`。角色画外对白仍保留角色身份；OS为内心独白，NAR为叙述。指定角色须属于对应节拍及执行台词的分镜。
 
-`segments`的每项包含`index`、`start`、`end`、`description`和`lines`；`lines`每项包含`dialogue_id`和实际执行的`text`。依次遍历shots、segments、lines时，全部原台词须各出现一次，且顺序与`dialogues`数组相同。文本对账先做Unicode NFC归一化，再忽略Unicode标点与空白，保留文字、数字和其他符号；标点格式仍单独参加文本QC。
+按shots、segments、lines顺序遍历，全部台词须恰好出现一次，顺序与`dialogues`一致。文字对账先做Unicode NFC归一化，再忽略标点与空白，保留字词、数字和其他符号。源锚点须唯一；`--source`额外核对源稿台词、说话者、类型和定位映射。
 
-每个shot的`duration`为5–30秒，以0.1秒为步长。其segments使用本shot的局部时间：序号从1连续递增，首段从0开始，相邻起止相接，每段时长为正，最后结束等于`duration`。动态提示词采用`镜头1（0.0-5.0s）：`格式，每个起止数值恰好一位小数；项目QC还会对账镜头数量、时间及各镜头引号内的台词。
+每个shot为5–30秒，时间采用0.1秒步长。`segments`是物理镜头：编号从1连续、首镜从0开始、区间首尾相接、每镜时长为正、末镜终点等于shot时长。动态正文使用`镜头1（0.0-5.0s）：`格式，时间恰好一位小数，并与segments对账。
 
-台词可用中文双引号或英文双引号，中文引号内允许换行。非台词内容不要加引号，以免被识别为额外台词。管理词扫描只豁免起始于合法镜头行，或镜头内带“说：”“OS：”“NAR：”等明确引导的引号台词；静态提示词、动态前置说明和尾部说明中的引号不享有此豁免。
+`segments.lines`记录`dialogue_id`与执行`text`，可成对填写`start/end`作为计划发声区间：起点落在所属物理镜头`[start, end)`内，终点晚于起点且不超过shot，同一shot内台词起点按执行顺序不回退。同一句可跨物理切镜，只归属开始发声的镜头。未标定时省略这对字段，导出显示“未标定”。
+
+~~~json
+{"dialogue_id": "LINE-LOCK", "text": "门锁换过了。", "start": 2.5, "end": 4.0}
+~~~
+
+台词用中文或英文双引号，中文引号内可换行；非台词说明不加引号。引号原文放在实际镜头内，首镜之前不得夹入额外台词。计划时段不代表实测，声音参考文件长度也不代替对白预算。
 
 ### 素材绑定与画幅
 
-`reference_bindings`每项包含`slot`和`asset_id`。静态提示词使用`@图片N`，动态使用`@素材N`，N为正整数；槽位在当前提示词内唯一，正文出现的槽位集合须与绑定集合一致。绑定角色、场景或道具时，该ID也须列入`asset_ids`；还可绑定静态PROMPT ID作为参考图的逻辑来源，不能绑定动态提示词。
+`reference_bindings`包含`slot`与`asset_id`。静态用`@图片N`，动态用`@素材N`，N为正整数；每槽唯一，有独立参考声明，正文槽位集合须与绑定一致。绑定角色、场景、道具或声音时，同一ID须列入`asset_ids`；也可引用静态PROMPT作为参考图来源，不能引用动态PROMPT。
 
-每个用到的槽位须有独立参考声明，例如`@素材1 参考场景空间布局。禁止继承画面风格、光影、色彩。`。禁止句可同处一行，或紧随声明另起协议续行，中间允许空行；遇到其他正文或下一条素材声明即停止关联。动态场景、故事板、故事分镜图和调度图参考须完整禁止继承画面风格、光影、色彩，正向继承这些属性也会报错。检查按声明主语区分场景与角色、道具；使用明确主语和协议句式，具体继承范围见 [R-REF-001](rule-authority.md)。
+声明按素材职责写明继承范围。动态场景/故事板参考须禁止继承画面风格、光影、色彩，也不得正向继承这些属性。禁止句可同行或紧接声明续行；不能从其他素材借用排除项。具体写法见[公共规则](rule-authority.md)。
 
-项目QC要求每条提示词在末行唯一声明`--ar 比例`：
+每条提示词须在末行唯一声明`--ar 比例`：T1/T3/T4为16:9，T2为3:4，其余模板（含T6C单帧关键帧）跟随项目主画幅。T5/T6/T6B采用同画幅3×3版式；T6/T6B使用`Shot #`行时，须按序包含1至9且已标定时间节点不回退、不超出所属分镜时长，引用的`物理镜头N`须存在于`shot.segments`。重复描述给出WARN，由人工确认是否为合法静止保持。
 
-| 模板 | 外画幅 |
+### 角色声音参考数据
+
+`voices`保存视频模型的声音身份参考；设计、试听与返片方法见[声音资产规范](voice-reference-assets.md)。
+
+| 字段 | 用途 |
 |---|---|
-| T1、T3、T4、T6、T6B | 16:9 |
-| T2 | 3:4 |
-| T5、T7、T8、T9 | `project.aspect_ratio` |
+| `id/revision/name` | 内部声音身份、版本与名称 |
+| `character_id` | 所属CHAR；`null`用于独立旁白 |
+| `description/language` | 稳定音色、语言口音和咬字 |
+| `source/notes` | 来源与补充说明 |
+| `status` | `planned`或`ready` |
+| `audition` | `unreviewed/approved/needs_revision`，记录参考声音试听状态 |
+| `audition_text`（可选） | 上游声音设计用的试听文案，与声音描述分开输入 |
+| `master` | 母版`path/sha256/duration/transcript` |
+| `references` | 模型副本列表：`id/model_id/path/sha256/duration/source_start/source_end/transcript` |
 
-图板内部九格的画幅由提示词文字表达，当前检查不读取实际图像比例。
+`planned`须为`master: null`、`references: []`，不能标记试听通过或分配音频槽。`ready`须有母版；试听未通过时给出WARN。样片文案和转写不进入`dialogues`或动态正文的台词引号，本镜表演仍由镜头正文决定。
 
-## 修改与快照
+副本ID在声音内唯一，裁剪区间落在母版内；副本时长与源区间长度允许0.05秒误差，不隐式变速。每个声音槽选择一条实际副本：
 
-shots和prompts的`depends_on`保存直接依赖的`id`、`revision`和SHA-256 `fingerprint`：
+~~~json
+{"slot": "@素材4", "asset_id": "VOICE-WANQING", "audio_reference_id": "wanqing-model-a"}
+~~~
 
-| 派生实体 | 必须保存的直接依赖 |
+动态提示词使用声音绑定时须提供`audio_reference_profile`：`model_id`、`supports_voice_reference`、`max_files`、`max_file_duration`、`max_total_duration`、`formats`和能力依据`source`。副本模型须匹配，数量、时长、格式不超已知限制；未知限制用`null`、未知格式用空数组，QC提示待核实。
+
+声明与角色行须指向同一声音归属，同一角色或旁白不同时绑定多个声音。静态提示词不能引用VOICE；明确声音身份的声明也不能绑定角色图片。通用`@素材N`最终须按实际平台的音频编号与上传方式适配。
+
+## 依赖与修改
+
+shots和prompts用`depends_on`保存直接依赖的ID、revision和SHA-256指纹：
+
+| 实体 | 直接依赖 |
 |---|---|
-| shot | project、引用的场景/角色/道具/节拍、segments实际使用的台词 |
-| prompt | project、`asset_ids`、素材绑定实体、非null的所属shot |
+| shot | project、场景/角色/道具/节拍、实际执行的台词 |
+| prompt | project、`asset_ids`、参考绑定及非空所属shot |
 
-指纹包含实体全部字段及revision，只排除`depends_on`，因此名称、备注、审查状态的修改也会影响下游。缺失、多余、重复、未知、成环或不匹配的依赖会报错，失效会沿派生实体的引用关系向下游传播。
+指纹包含实体全部字段，仅排除`depends_on`。上游改动会使下游失效；缺失、多余、重复、未知、成环及不匹配的依赖均报错。修改顺序为：修订源稿或上游 → 重做受影响内容并增版 → 显式capture → QC → 导出。capture只记录当前依赖，不代替内容修订。
 
-### capture：显式记录已完成内容的依赖
+`--previous`检查同项目的删除/改ID、版本回退和未增版的内容变更；不检查顶层数组重排。源文件不属于JSON快照，仅改源稿不会自动触发失效，须用`--source`对账。跨集公共资产通过`sync-assets`同步，命令见[本地工具](tools.md#数据修改)。
 
-首次建立完整数据时，可先将每条shot和prompt的`depends_on`写为`[]`，其他字段仍须完整，然后使用`--all`一次性捕获全部shot和prompt（支持`--output`输出新文件或`--in-place`/`-i`原地更新）：
+## 检查边界
 
-~~~powershell
-python -B -X utf8 scripts/project_data.py capture project.draft.json --all --output project.captured.json
-python -B -X utf8 scripts/qc_check.py project.captured.json
-~~~
+完整JSON QC检查字段、引用、台词、时间、依赖和提示词；Markdown QC只检查独立提示词块。显式`--media-root`才检查声音本地文件、指纹与可读取WAV时长，不验证转写或音色。
 
-后续修改先增版上游实体并重做受影响内容，再用`--stale`自动捕获所有缺少快照或依赖已失效的实体，或用`--entity`显式指定已完成的分镜与提示词：
-
-~~~powershell
-python -B -X utf8 scripts/project_data.py capture project.json --stale --in-place
-python -B -X utf8 scripts/project_data.py capture project.json --entity SHOT-001 --entity PROMPT-BOARD-001 --entity PROMPT-VIDEO-001 --output output/project.updated.json
-~~~
-
-`--entity`、`--all`与`--stale`三选一。capture检查字段形状和所选实体的依赖，不执行完整项目QC，不改写创作内容或revision；使用`--entity`时若所选提示词仍依赖已失效的分镜或静态提示词，须先完成上游修改并将相应实体一并选入（或改用`--stale`）。`--output`必须是不存在的新文件，可自动创建父目录；`--in-place`（`-i`）直接写回原文件。完成后运行QC验证。
-
-### sync-assets与extract-script：跨集资产同步与源剧本提取
-
-多集项目可将公共`characters`、`scenes`、`props`及全局静态`prompts`（`shot_id: null`）保存在共享资产JSON或主集`project.json`中，同步到分集项目：
-
-~~~powershell
-python -B -X utf8 scripts/project_data.py sync-assets ep02/project.json --from shared/assets.json --in-place
-python -B -X utf8 scripts/project_data.py extract-script examples/demo/preproduction.md
-~~~
-
-`sync-assets`默认更新当前项目已引用的同名ID资产；加`--include-new`可一并并入尚未收录的新共享资产。同步后受影响的分镜与提示词依赖快照会自动失配，随后重做受影响内容并执行`capture --stale`。`extract-script`从源剧本或前期交接Markdown中解析动作节拍、台词和交接映射骨架。
-
-### --previous：与同一项目的基线比较
-
-~~~powershell
-python -B -X utf8 scripts/qc_check.py project.json --previous project.accepted.json
-~~~
-
-旧文件先做字段形状检查，并要求`project.id`相同。比较会报告旧实体删除或改ID、revision回退，以及实体内容修改但revision未增加；新增实体允许存在。仅改`depends_on`不计为内容修改，顶层数组重排也不由基线比较检查，当前项目仍须通过自身的顺序与关系校验。验收基线由维护者保存，工具不分配ID或维护长期历史。
-
-## QC命令
-
-~~~powershell
-python -B -X utf8 scripts/qc_check.py examples/demo/project.json --format json
-python -B -X utf8 scripts/qc_check.py output/demo --mode auto
-python -B -X utf8 scripts/qc_check.py prompt.txt --mode dynamic --duration 10
-~~~
-
-| 输入或选项 | 实际行为 |
-|---|---|
-| `.json`文件 | 自动按项目检查：字段、关系、快照及每条提示词 |
-| `--project` | 强制将文件或stdin作为项目JSON读取 |
-| 目录 | 只递归扫描`.md`和`.txt`，跳过名为`SKILL.md`的文件；目录内JSON不检查，须分别传入文件 |
-| 不传路径 | 从stdin读取；项目JSON必须加`--project`，否则按文本检查 |
-| `--mode auto/static/dynamic` | 用于文本；auto优先采用块template，再结合标题、代码块语言和正文判断 |
-| `--duration 10` | 文本动态块的规定时长，须为5–30秒的有限数值；覆盖块元数据，并与任务声明和镜头终点对账 |
-| `--previous 文件` | 仅用于项目JSON，执行上节的基线比较 |
-| `--source 文件` | 仅用于项目JSON，校验源剧本或交接Markdown的台词、说话人、顺序、`source_ref`及交接表映射 |
-| `--shared-assets 文件` | 仅用于项目JSON，校验公共角色、场景、道具及全局静态提示词与共享资产库同步 |
-| `--format text/json` | 默认为可读文本；JSON输出包含`ok`、`checked`、`skipped`、`results` |
-
-从文件演示stdin项目输入时，PowerShell可调用cmd的输入重定向：
-
-~~~powershell
-cmd /c "python -B -X utf8 scripts/qc_check.py --project --format json < project.json"
-~~~
-
-项目JSON始终使用每条记录的template和duration，`--mode`或`--duration`不覆盖它们。JSON输出中的`checked`是检查结果记录数：项目模式包含一条项目结果及各提示词结果，不是文件数。
-
-### Markdown与纯文本
-
-Markdown逐个检查独立提示词代码块，不扫描块外的规划标题、说明和表格。支持`text`、`txt`、`prompt`、`static`、`dynamic`语言块，以及能按元数据、标题模板或正文识别的无语言块；JSON、Python等代码块跳过，提示词块未闭合会报错。
-
-块前可写`<!-- prompt id=PROMPT-VIDEO-001 template=T9 duration=5.0 -->`指定身份、模板和时长，元数据紧邻代码块，可间隔空行。导出器自动写入这些元数据。无围栏的`.txt`或stdin按纯提示词检查；无围栏的`.md`只有在不含Markdown标题且能识别为提示词时才检查，否则作为规划文档跳过。请扫描交付目录，而非含模板占位符的规则库。
-
-### 诊断与退出码
-
-| 退出码 | 含义 |
-|---|---|
-| 0 | 无ERROR；只有WARN也返回0 |
-| 1 | 有ERROR；QC的空目录或全部跳过也返回1 |
-| 2 | 命令参数错误，如缺少必填参数或非法`--duration` |
-
-三个CLI均采用上述成功、失败和参数错误退出码。QC的WARN包括风格段识别、字数、抽象情绪等文字启发式提示，应按诊断复核；无ERROR不等于全部制作规则或画面质量已验收。
-
-## 导出与测试
-
-### render_project：导出托管Markdown
-
-~~~powershell
-python -B -X utf8 scripts/render_project.py examples/demo/project.json --output output/demo
-~~~
-
-导出器先运行完整项目QC，有ERROR时不写文件。QC的WARN不阻止导出，也不会在导出命令中逐条展示，需单独运行QC查看。导出命令没有`--previous`选项；需要基线比较时，先对同一输入文件运行带`--previous`的QC。
-
-| 输出 | 内容 |
-|---|---|
-| `project.md` | 全局设定、节拍摘要、按dialogues数组顺序列出的原始台词、全局静态提示词和15列总分镜表；字段见 [总分镜表字段](../sd-storyboard/SKILL.md#总分镜表字段) |
-| `SHOT-ID_分镜.md` | 每镜五章及独立提示词代码块，结构见 [导出交付](../sd-storyboard/SKILL.md#导出交付) |
-| `.drama-export.json` | 项目归属、托管文件指纹及过期文件清单；重复导出时须保留 |
-
-导出不修改源JSON和依赖快照。重复导出可更新未被手改的托管文件；同名非托管文件、手工改过的目标文件或属于另一项目的导出目录会阻止覆盖。手改内容须先核对合并回JSON，或使用新目录导出。
-
-不再属于当前项目的旧文件会保留，`obsolete_files`持续提示，直到文件被人工删除或重新纳入项目。`obsolete_file_fingerprints`保留其原导出指纹，恢复旧镜头时仍按该指纹保护手改内容。旧版清单可以读取；若旧清单中的过期文件没有原指纹，恢复时不会直接覆盖，需先核对合并或换用新目录。
-
-### 本地测试
-
-~~~powershell
-python -B -X utf8 -m unittest discover -s tests -v
-~~~
-
-正式脚本与测试只依赖Python标准库。测试覆盖Schema字段约束、引用、台词与时间对账、依赖失效、文本QC和导出保护，可用示例验证数据到文档的链路。
+故事因果、预算表、动作耗时、证据阅读、设计正文语义一致性及实际声音/口型效果由专业审阅和返片核对。程序QC、专业审阅和用户确认分别记录，创作草稿无需为送检强建完整JSON。

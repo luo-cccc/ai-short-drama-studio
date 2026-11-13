@@ -195,9 +195,56 @@ class PromptChecks(unittest.TestCase):
         self.assertTrue(any("T6B参考范围正向继承" in error for error in errors))
 
     def test_color_storyboard_keeps_its_reference_style_scope(self):
-        source = "@图片1 参考场景空间布局、色彩光影与画面风格。禁止继承构图、景别。\n生成彩色故事版。\n--ar 16:9"
+        source = "@图片1 参考场景空间布局、色彩光影与画面风格。禁止继承构图、景别。\n生成彩色故事版。\n--ar 9:16"
         errors, _ = qc.check(source, mode="static", template="T6")
         self.assertFalse(errors)
+
+    def test_storyboard_nine_grid_completeness_and_uniqueness_check(self):
+        cells = [f"Shot #{i}（节点{i}·物理镜头1）：第{i}格差异化关键帧描述。" for i in range(1, 10)]
+        valid_board = "生成三行三列关键帧故事板。\n" + "\n".join(cells) + "\n--ar 9:16"
+        self.assertFalse(qc.check(valid_board, mode="static", template="T6B")[0])
+
+        incomplete = "生成三行三列关键帧故事板。\n" + "\n".join(cells[:6]) + "\n--ar 9:16"
+        errors, _ = qc.check(incomplete, mode="static", template="T6B")
+        self.assertTrue(any("Shot #1至Shot #9" in e for e in errors), errors)
+
+        duplicated = list(cells)
+        duplicated[4] = "Shot #5（节点5·物理镜头1）：第1格差异化关键帧描述。"
+        dup_board = "生成三行三列关键帧故事板。\n" + "\n".join(duplicated) + "\n--ar 9:16"
+        errors, warnings = qc.check(dup_board, mode="static", template="T6")
+        self.assertFalse(errors, errors)
+        self.assertTrue(any("合法静止保持" in item for item in warnings), warnings)
+
+        backwards = list(cells)
+        backwards[2] = "Shot #3（2.5秒·物理镜头1）：第3格描述。"
+        backwards[3] = "Shot #4（1.8秒·物理镜头1）：第4格描述。"
+        backwards_board = "生成三行三列关键帧故事板。\n" + "\n".join(backwards) + "\n--ar 9:16"
+        errors, _ = qc.check(backwards_board, mode="static", template="T6B")
+        self.assertTrue(any("时间节点倒退" in e for e in errors), errors)
+
+    def test_dynamic_sub_interval_inversion_and_out_of_bounds_are_reported(self):
+        inverted = dynamic_text().replace(
+            '镜头1（0.0-5.0s）：镜头平移，林舟停在木门旁，低声匀速说："别动。"',
+            '镜头1（0.0-5.0s）：3.0–1.5秒林舟停在木门旁，低声匀速说："别动。"',
+        )
+        errors, _ = qc.check(inverted, duration=10, template="T9")
+        self.assertTrue(any("阶段时间区间倒置" in e for e in errors), errors)
+
+        out_of_bounds = dynamic_text().replace(
+            '镜头1（0.0-5.0s）：镜头平移，林舟停在木门旁，低声匀速说："别动。"',
+            '镜头1（0.0-5.0s）：5.5–7.0秒林舟停在木门旁，低声匀速说："别动。"',
+        )
+        errors, _ = qc.check(out_of_bounds, duration=10, template="T9")
+        self.assertTrue(any("超出有效时间范围" in e for e in errors), errors)
+
+    def test_short_shot_action_density_overload_emits_warning(self):
+        overloaded = dynamic_text().replace(
+            '镜头1（0.0-5.0s）：镜头平移，林舟停在木门旁，低声匀速说："别动。"',
+            '镜头1（0.0-5.0s）：0.0–0.5秒林舟转头，0.5–1.2秒抬手，1.2–2.0秒探入木缝，2.0–3.0秒抽出钥匙，3.0–4.5秒翻掌并低声匀速说："别动。"',
+        )
+        errors, warnings = qc.check(overloaded, duration=10, template="T9")
+        self.assertFalse(errors)
+        self.assertTrue(any("单镜动作密度过高" in w for w in warnings), warnings)
 
     def test_static_scene_reference_conflict_checks_actual_overlap(self):
         disjoint = "@图片1 参考场景空间布局与色彩光影。禁止继承画面风格。\n生成彩色故事版。\n--ar 16:9"
@@ -412,6 +459,54 @@ class CompleteProjectQCRegressionTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "动态场景/故事板参考"):
                         export_project(data, output)
                     self.assertFalse(output.exists())
+
+    def test_character_and_prop_dna_drift_and_scene_lighting_flip_warnings(self):
+        from scripts.project_data import load_project, snapshot_dependencies
+
+        data = load_project(ROOT / "examples" / "demo" / "project.json")
+        # 1. 制造角色与道具外貌 DNA 漂移
+        drifted = deepcopy(data)
+        p2 = next(p for p in drifted["prompts"] if p["id"] == "PROMPT-VIDEO-002")
+        p2["text"] = p2["text"].replace(
+            "年轻东亚女性，窄脸，平直眉，深棕瞳孔，黑发低束，清瘦身形，灰蓝长衫，黑布鞋",
+            "金发碧眼少女，波浪长发，红色晚礼服，高跟鞋",
+        ).replace(
+            "扁平铜质，环形匙柄，缺角齿口，表面细小暗斑",
+            "方形木牌，光滑表面",
+        )
+        p2["revision"] += 1
+        drifted = snapshot_dependencies(drifted)
+        warnings = [w for r in qc.check_project(drifted) for w in r["warnings"]]
+        self.assertTrue(any("角色晚晴（CHAR-WANQING）" in w and "外貌一致性" in w for w in warnings), warnings)
+        self.assertTrue(any("道具铜钥匙（PROP-KEY）" in w and "跨镜一致性" in w for w in warnings), warnings)
+
+        # 2. 制造同场景跨镜光影冷暖突变
+        flipped = deepcopy(data)
+        for item in flipped["shots"][1]["design"]:
+            if item["role"] == "lighting":
+                item["decision"] = "夕阳暖金斜射光与暖黄火光基调。"
+        p2_flip = next(p for p in flipped["prompts"] if p["id"] == "PROMPT-VIDEO-002")
+        p2_flip["text"] = p2_flip["text"].replace("冷白柔和", "暖金柔和").replace("灰蓝低饱和", "暖黄高饱和")
+        flipped["shots"][1]["revision"] += 1
+        p2_flip["revision"] += 1
+        flipped = snapshot_dependencies(flipped)
+        proj_warnings = qc.check_project(flipped)[0]["warnings"]
+        self.assertTrue(any("光影冷暖基调发生突变（冷调→暖调）" in w for w in proj_warnings), proj_warnings)
+
+    def test_storyboard_cross_field_segment_and_duration_checks(self):
+        from scripts.project_data import load_project, snapshot_dependencies
+
+        data = load_project(ROOT / "examples" / "demo" / "project.json")
+        board = next(p for p in data["prompts"] if p["id"] == "PROMPT-BOARD-001")
+        board["text"] = board["text"].replace(
+            "Shot #9（5.0秒切出末态·物理镜头1）",
+            "Shot #9（6.5秒切出末态·物理镜头2）",
+        )
+        board["revision"] += 1
+        rebuilt = snapshot_dependencies(data)
+        board_res = next(r for r in qc.check_project(rebuilt) if r.get("prompt_id") == "PROMPT-BOARD-001")
+        self.assertTrue(any("超出所属分镜duration" in e for e in board_res["errors"]), board_res["errors"])
+        self.assertTrue(any("不存在的物理镜头2" in e for e in board_res["errors"]), board_res["errors"])
 
 
 class CLIInputChecks(unittest.TestCase):
