@@ -145,7 +145,7 @@ def validate_shape(data):
     if not errors and data["schema_version"] == "1.0":
         if "voices" in data or any(
                 "audio_reference_profile" in prompt
-                or any(binding["asset_id"].startswith("VOICE-") or "audio_reference_id" in binding
+                or any(binding["asset_id"].startswith("VOICE-")
                        for binding in prompt["reference_bindings"])
                 or any(asset.startswith("VOICE-") for asset in prompt["asset_ids"])
                 for prompt in data["prompts"]):
@@ -607,34 +607,23 @@ def _baseline_errors(data, previous):
 def _validate_voices(data):
     errors, warnings = [], []
     characters = {item["id"] for item in data["characters"]}
+    seen_owners = set()
     for voice in data.get("voices", []):
-        voice_id, master = voice["id"], voice["master"]
-        if voice["character_id"] is not None and voice["character_id"] not in characters:
-            errors.append(f"{voice_id}: 未知角色 {voice['character_id']}")
+        voice_id, ref = voice["id"], voice["reference"]
+        owner = voice["character_id"]
+        if owner is not None and owner not in characters:
+            errors.append(f"{voice_id}: 未知角色 {owner}")
+        if owner in seen_owners:
+            errors.append(f"{voice_id}: 角色 {owner or '旁白'} 只能保留单条声音参考资产")
+        seen_owners.add(owner)
         if voice["status"] == "planned":
-            if master is not None or voice["references"]:
-                errors.append(f"{voice_id}: planned 声音不能登记已就绪母版或投喂副本")
-            if voice["audition"] == "approved":
-                errors.append(f"{voice_id}: planned 声音不能标记试听已通过")
+            if ref is not None:
+                errors.append(f"{voice_id}: planned 声音不能登记已就绪参考音频")
             warnings.append(f"{voice_id}: 声音待制作，尚无可投喂音频，不得分配音频素材槽")
-        elif master is None:
-            errors.append(f"{voice_id}: ready 声音必须登记母版音频")
-        if voice["status"] == "ready" and voice["audition"] != "approved":
-            warnings.append(f"{voice_id}: 声音试听状态为 {voice['audition']}，需结合实际音频复核")
-        reference_ids = [item["id"] for item in voice["references"]]
-        if len(reference_ids) != len(set(reference_ids)):
-            errors.append(f"{voice_id}: 投喂副本 id 重复")
-        for item in voice["references"]:
-            start, end = Decimal(str(item["source_start"])), Decimal(str(item["source_end"]))
-            if end <= start:
-                errors.append(f"{voice_id}/{item['id']}: 母版裁剪区间必须为正")
-            if master is not None and end > Decimal(str(master["duration"])):
-                errors.append(f"{voice_id}/{item['id']}: 裁剪区间超出母版时长")
-            if abs(end - start - Decimal(str(item["duration"]))) > Decimal("0.05"):
-                errors.append(f"{voice_id}/{item['id']}: 副本时长与母版裁剪区间不一致（不隐式变速）")
-        for item in ([master] if master is not None else []) + voice["references"]:
-            if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", item["path"]):
-                errors.append(f"{voice_id}: 音频 path 应登记本地文件路径，不能使用远程 URL")
+        elif ref is None:
+            errors.append(f"{voice_id}: ready 声音必须登记单条参考音频")
+        if ref is not None and re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", ref["path"]):
+            errors.append(f"{voice_id}: 音频 path 应登记本地文件路径，不能使用远程 URL")
     return errors, warnings
 
 
@@ -655,8 +644,6 @@ def _validate_voice_bindings(data, prompt, shot, groups):
     if bindings and profile is not None and not profile["supports_voice_reference"]:
         errors.append(f"{prompt_id}: 目标模型声明不支持声音参考，不能投喂声音槽")
     for item in prompt["reference_bindings"]:
-        if not item["asset_id"].startswith("VOICE-") and "audio_reference_id" in item:
-            errors.append(f"{prompt_id}: 只有声音绑定可以指定 audio_reference_id")
         if not item["asset_id"].startswith("VOICE-"):
             declaration = re.search(
                 r"(?m)^[ \t]*" + re.escape(item["slot"]) + r"[ \t]+参考([^\r\n]+)", prompt["text"]
@@ -708,19 +695,17 @@ def _validate_voice_bindings(data, prompt, shot, groups):
             errors.append(f"{context}: 声音参考声明未明确所属角色或旁白 {expected_name}")
         elif not re.match(r"(?:角色|人物)?\s*(?:" + "|".join(re.escape(name) for name in expected_names) + r")(?:的)?\s*(?:声音身份|声音|音色|声线|音频)", positive_subject):
             warnings.append(f"{context}: 声音参考主语未使用明确角色协议，请核对声音归属 {expected_name}")
-        reference_id = binding.get("audio_reference_id")
-        selected = next((item for item in voice["references"] if item["id"] == reference_id), None)
+        selected = voice["reference"]
         if selected is None:
-            errors.append(f"{context}: audio_reference_id 未指向该声音的投喂副本")
             continue
         durations.append(Decimal(str(selected["duration"])))
         if profile is None:
             continue
         if selected["model_id"] != profile["model_id"]:
-            errors.append(f"{context}: 声音副本 model_id 与目标视频模型不一致")
+            errors.append(f"{context}: 声音参考 model_id 与目标视频模型不一致")
         maximum = profile["max_file_duration"]
         if maximum is not None and Decimal(str(selected["duration"])) > Decimal(str(maximum)):
-            errors.append(f"{context}: 声音副本超过单文件时长上限")
+            errors.append(f"{context}: 声音参考超过单文件时长上限")
         extension = Path(selected["path"]).suffix.lower().lstrip(".")
         if profile["formats"] and extension not in profile["formats"]:
             errors.append(f"{context}: 音频格式 {extension or '未知'} 不在目标模型允许范围")
@@ -781,6 +766,14 @@ def _validate_visual_bindings(data, prompt, shot, groups):
                 scene_assets = {a for a in target_prompt["asset_ids"] if a.startswith("SCENE-")}
                 if scene_assets and not (scene_assets & set(prompt["asset_ids"])):
                     errors.append(f"{context}: 场景参考图 {asset_id} 的所属场景未列入当前提示词 asset_ids")
+            if (
+                prompt["template"] in {"T1", "T2", "T3", "T4", "T5"}
+                and tpl == prompt["template"]
+                and target_prompt.get("reference_bindings")
+            ):
+                warnings.append(
+                    f"{context}: 衍生静态资产引用了已带垫图参考的变体提示词 {asset_id}（{tpl}），连续串行垫图会导致代际噪点累积，请直接回绑零代母图（Gen-0）"
+                )
 
         decl_match = re.search(
             r"(?m)^[ \t]*" + re.escape(slot) + r"[ \t]+参考([^\r\n]+)", prompt["text"]
@@ -897,32 +890,32 @@ def validate_voice_media(data, media_root):
     if not root.is_dir():
         return [f"声音媒体根目录不存在或不是目录：{root}"], []
     for voice in data.get("voices", []):
-        records = ([('master', voice["master"])] if voice["master"] is not None else [])
-        records.extend((item["id"], item) for item in voice["references"])
-        for label, record in records:
-            context = f"{voice['id']}/{label}"
-            path = root / record["path"]
-            try:
-                fingerprint = hashlib.sha256()
-                with path.open("rb") as handle:
-                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                        fingerprint.update(chunk)
-                if fingerprint.hexdigest() != record["sha256"]:
-                    errors.append(f"{context}: 音频文件 SHA-256 与登记指纹不符：{path}")
-                if path.suffix.lower() == ".wav":
-                    with wave.open(str(path), "rb") as audio:
-                        if audio.getframerate() <= 0:
-                            raise ValueError("WAV 采样率必须为正")
-                        duration = audio.getnframes() / audio.getframerate()
-                        expected_bytes = audio.getnframes() * audio.getnchannels() * audio.getsampwidth()
-                        if len(audio.readframes(audio.getnframes())) != expected_bytes:
-                            errors.append(f"{context}: WAV 音频数据截断：{path}")
-                    if abs(Decimal(str(duration)) - Decimal(str(record["duration"]))) > Decimal("0.05"):
-                        errors.append(f"{context}: WAV 实测时长与登记时长不符：{path}")
-                else:
-                    warnings.append(f"{context}: 已检查文件和指纹；标准库未测量 {path.suffix} 音频时长")
-            except (OSError, ValueError, EOFError, wave.Error) as error:
-                errors.append(f"{context}: 无法检查音频文件 {path}：{error}")
+        record = voice["reference"]
+        if record is None:
+            continue
+        context = f"{voice['id']}/reference"
+        path = root / record["path"]
+        try:
+            fingerprint = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    fingerprint.update(chunk)
+            if fingerprint.hexdigest() != record["sha256"]:
+                errors.append(f"{context}: 音频文件 SHA-256 与登记指纹不符：{path}")
+            if path.suffix.lower() == ".wav":
+                with wave.open(str(path), "rb") as audio:
+                    if audio.getframerate() <= 0:
+                        raise ValueError("WAV 采样率必须为正")
+                    duration = audio.getnframes() / audio.getframerate()
+                    expected_bytes = audio.getnframes() * audio.getnchannels() * audio.getsampwidth()
+                    if len(audio.readframes(audio.getnframes())) != expected_bytes:
+                        errors.append(f"{context}: WAV 音频数据截断：{path}")
+                if abs(Decimal(str(duration)) - Decimal(str(record["duration"]))) > Decimal("0.05"):
+                    errors.append(f"{context}: WAV 实测时长与登记时长不符：{path}")
+            else:
+                warnings.append(f"{context}: 已检查文件和指纹；标准库未测量 {path.suffix} 音频时长")
+        except (OSError, ValueError, EOFError, wave.Error) as error:
+            errors.append(f"{context}: 无法检查音频文件 {path}：{error}")
     return errors, warnings
 
 

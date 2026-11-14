@@ -1,44 +1,41 @@
 # AI短剧制作技能包
 
-用于中文短剧的故事开发、剧本写作、八岗位分镜和静动态提示词制作，提供项目JSON校验、依赖快照同步、Markdown文档导出及参考图切分脚本。
+面向中文短剧从选题开发、剧本创作、八岗位分镜到静动态提示词交付的编排技能包，内置零第三方强依赖（Python 3.10+标准库）的项目数据管理、质量检查（QC）、Markdown导出与参考图无损切分脚本。
 
-## 仓库结构
+## 仓库目录与文件清单
 
-| 路径 | 说明 |
+| 路径 | 实际内容与职责 |
 |---|---|
-| `SKILL.md` | 顶层任务入口与模块路由 |
-| `_meta.json` | 技能包元数据与版本信息 |
-| `schemas/project.schema.json` | 项目JSON Schema（支持`1.0`与`1.1`） |
-| `scripts/project_data.py` | 源剧本提取、草稿骨架生成、共享资产同步、依赖快照捕获与项目校验 |
-| `scripts/qc_check.py` | 项目JSON与Markdown/纯文本提示词质量检查 |
-| `scripts/render_project.py` | 校验并导出`project.md`、逐镜`SHOT-ID_分镜.md`及`.drama-export.json` |
-| `scripts/slice_grid.py` | T5空间九视角、T6/T6B九宫格故事板及T1角色设定图无损切分 |
-| `references/production-workflow.md` | 故事开发到校验导出的阶段交付、交接表与回改顺序 |
-| `references/project-data.md` | `project.json`实体、字段关系、素材绑定与依赖快照规则 |
-| `references/rule-authority.md` | 跨模块规则编号（`R-*`）与定义归属 |
-| `references/scene-timing.md` | 整场时间预算与制作片段拆分规则 |
-| `references/voice-reference-assets.md` | 角色声音设计、母版、模型投喂副本与音频槽绑定规范 |
-| `references/tools.md` | 四个本地CLI脚本的参数、输出与退出码说明 |
-| `references/constraints.md` | 提示词30–50字正向尾约束写法 |
-| `sd-story-development/` | 选题、故事优化、剧本证据审阅与导演风格模块（含`SKILL.md`及4份参考） |
-| `sd-scriptwriter/` | 梗概、人物、大纲与中文场景剧本模块（含`SKILL.md`及2份参考） |
-| `sd-storyboard/` | 资产节拍、9B八岗位分镜与审阅模块（含`SKILL.md`及3份参考） |
-| `sd-static-assets/` | T1–T6/T6B/T6C静态资产提示词模块（含`SKILL.md`及2份参考） |
-| `sd-dynamic-video/` | T7–T9动态视频提示词与声音脚本模块（含`SKILL.md`及2份参考） |
-| `examples/demo/` | 《院门线索》1.0完整项目数据（`project.json`）与前期交接文档（`preproduction.md`） |
-| `examples/voice-reference/` | 《院门线索》1.1声音参考规划示例（`README.md`、`preproduction.md`、`project.json`） |
-| `tests/` | Schema、数据关系、提示词QC、声音参考、切图与导出的单元测试套件 |
+| `SKILL.md` | 顶层任务路由与执行约定 |
+| `_meta.json` | 技能包发布元数据与版本标识 |
+| `schemas/project.schema.json` | 项目JSON Schema（支持`1.0`与`1.1`单条角色声音参考结构） |
+| `scripts/project_data.py` | 源剧本提取与骨架生成（`extract-script`）、跨集资产同步（`sync-assets`）、依赖快照捕获（`capture`）及项目关系校验 |
+| `scripts/qc_check.py` | `project.json`与Markdown/纯文本提示词质量检查（含防串脸、跨镜光影、防连续参考代际噪点、单条声音参考与本地WAV校验） |
+| `scripts/render_project.py` | 自动QC后导出`project.md`、逐镜五章文档`SHOT-ID_分镜.md`及`.drama-export.json`清单 |
+| `scripts/slice_grid.py` | `T5`空间九视角、`T6`/`T6B`九宫格故事板（`--mode grid`）与`T1`角色设定图（`--mode t1`）无损PNG切分 |
+| `references/production-workflow.md` | 六阶段交付链路、文件约定、交接映射与改稿回改顺序 |
+| `references/project-data.md` | `project.json`顶层实体、校验规则、素材绑定与`depends_on`快照契约 |
+| `references/rule-authority.md` | 跨模块规则编号（`R-*`）与唯一定义归属 |
+| `references/scene-timing.md` | 整场时间预算、自然语速估算、视频模型起收音缓冲与分段规则 |
+| `references/voice-reference-assets.md` | 单条角色声音参考（`VOICE-`）设计、`reference`音频登记与`@素材N`绑定规范 |
+| `references/constraints.md` | 提示词末尾30–50字正向质量尾约束与衍生参考图防噪点写法 |
+| `references/tools.md` | 四个本地CLI脚本的参数、行为与退出码说明 |
+| `sd-story-development/` | 选题诊断、故事优化、导演风格与剧本证据审阅模块（`SKILL.md` + `references/`下4份参考） |
+| `sd-scriptwriter/` | 梗概、人物、分场大纲与中文场景剧本模块（`SKILL.md` + `references/`下2份参考） |
+| `sd-storyboard/` | 资产节拍整理、9B八岗位分镜设计与审阅模块（`SKILL.md` + `references/`下3份参考） |
+| `sd-static-assets/` | `T1`–`T6`/`T6B`/`T6C`静态资产提示词与零代母图防噪点模块（`SKILL.md` + `references/`下2份参考） |
+| `sd-dynamic-video/` | `T7`–`T9`动态视频提示词、原生声画脚本与单条角色音色绑定模块（`SKILL.md` + `references/`下2份参考） |
+| `examples/demo/` | 《院门线索》Schema `1.0`示例（`preproduction.md`、`project.json`） |
+| `examples/voice-reference/` | 《院门线索》Schema `1.1`单条角色声音参考示例（`README.md`、`preproduction.md`、`project.json`） |
+| `tests/` | 覆盖Schema、数据关系、提示词解析、声音参考、防噪点、切图与导出的12个`unittest`测试文件 |
 
-## 快速开始
+## 常用命令
 
-核心脚本仅依赖Python 3.10+标准库（切分非标准PNG或JPEG/WebP时可选安装Pillow）。在仓库根目录执行：
+在仓库根目录执行：
 
 ~~~powershell
 python -B -X utf8 scripts/qc_check.py examples/demo/project.json --source examples/demo/preproduction.md
+python -B -X utf8 scripts/qc_check.py examples/voice-reference/project.json --source examples/voice-reference/preproduction.md
 python -B -X utf8 scripts/render_project.py examples/demo/project.json --output output/demo
 python -B -X utf8 -m unittest discover -s tests
 ~~~
-
-- **创作与制作编排**：从[SKILL.md](SKILL.md)和[制作流程](references/production-workflow.md)进入对应阶段。
-- **数据结构与改稿**：参考[项目数据契约](references/project-data.md)与[公共规则](references/rule-authority.md)。
-- **命令行工具**：参考[本地工具说明](references/tools.md)。

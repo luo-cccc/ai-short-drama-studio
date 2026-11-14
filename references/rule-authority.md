@@ -22,10 +22,10 @@
 | R-PARAM-001 | 参数规范 | 机位与光影可用焦距、光圈、色温、光位角度并配视觉效果描述；主体动作不写量化角度，正文禁用物理尺寸、速度（m/s）、重量（kg）、照度（lux）、分贝（dB）、ISO、快门及罗盘方位词（东南西北）。 | [qc_check.py](../scripts/qc_check.py) |
 | R-SPACE-001 | 分镜时长与拆分 | 单个`SHOT`为5–30秒；超出承载量时延长或拆分为多个分镜，不为凑镜数删减剧情或按台词条数机械切镜。 | [storyboard-rules.md](../sd-storyboard/references/storyboard-rules.md) |
 | R-TIME-001 | 动态镜头时间戳 | 格式为`镜头1（0.0-5.0s）：`，序号从1连续递增，首段从`0.0`起，相邻段首尾相接，一位小数，总长等于分镜`duration`。 | [动态模板](../sd-dynamic-video/references/templates.md) |
-| R-TIME-002 | 整场时间预算 | 先排对白、操作、反应、证据阅读和转场的顺序与并行区间，再划分制作片段；局部时间小于等于6.0秒且含5个及以上细分时段时触发高密度WARN。 | [scene-timing.md](scene-timing.md) |
+| R-TIME-002 | 整场时间预算 | 先按自然语速与起收音口型缓冲（首句`>=0.3s`、末句留`0.3–0.5s`收尾余量）排定对白、操作、反应、证据阅读和转场的顺序与并行区间，再划分制作片段；局部时间小于等于6.0秒且含5个及以上细分时段时触发高密度WARN。 | [scene-timing.md](scene-timing.md) |
 | R-SHOT-001 | 镜头过程与切点 | 明确主体、相对机位、起幅、运动过程与落幅；证据阅读窗口从对象清楚可辨时起算；切点落在具体动作、目光、物件或声音节点，八岗位、`segments.description`、故事板与动态正文保持一致。 | [storyboard-rules.md](../sd-storyboard/references/storyboard-rules.md) |
-| R-REF-001 | 视觉参考声明 | 静态用`@图片N`，动态用`@素材N`；正向参考与`禁止继承`不得矛盾，声明主语与绑定实体类别/名称一致。跨状态T1/T2/T3绑定母图锁死骨相/器型/建筑拓扑并禁旧状态；T6B仅继承结构；引用T6/T6B切片时禁止继承人物五官面容；动态场景/故事板参考必须`禁止继承画面风格、光影、色彩`。 | [project-data.md](project-data.md)、[qc_check.py](../scripts/qc_check.py) |
-| R-VOICE-001 | 声音参考资产 | 声音卡与母版保存稳定音色、口音和咬字，按`audio_reference_profile`绑定模型副本。声明只参考声音身份，禁止继承样片台词、情绪、语速、背景声音；样片转写与`audition_text`不进入`dialogues`或镜头台词引号。 | [voice-reference-assets.md](voice-reference-assets.md) |
+| R-REF-001 | 视觉参考与防代际噪点 | 静态用`@图片N`，动态用`@素材N`；正向参考与`禁止继承`不得矛盾，声明主语与绑定实体类别/名称一致。跨状态T1/T2/T3及T4/T5/T6C须直接回绑零代母图（Gen-0）星型直连，严禁变体接变体串行叠代；T6B仅继承结构；引用T6/T6B切片时禁止继承人物五官面容；动态场景/故事板参考必须`禁止继承画面风格、光影、色彩`；带参考图的静态提示词禁用高频颗粒/锐化词。 | [project-data.md](project-data.md)、[static-rules.md](../sd-static-assets/references/static-rules.md) |
+| R-VOICE-001 | 单条角色声音参考 | 每个发声角色（或旁白）仅保留单条`VOICE-`干声参考音频供视频模型锁定音色，不额外生成整集声音资产。声明只参考声音身份，禁止继承样片台词、情绪、语速、背景声音；样片转写与`audition_text`不进入`dialogues`或镜头台词引号。 | [voice-reference-assets.md](voice-reference-assets.md) |
 | R-CONSIST-001 | 跨镜一致性 | 角色`description`包含至少2项不可变面部骨相特征与默认服装；露脸镜头保留骨相DNA，局部手足/纯背影移除不可见五官词；多人同框逐角色内联绑定槽位与画面方位；同场景跨镜保持光影色温连续（有剧情动机变化除外）；未绑音频槽时发声镜头沿用`characters.voice`核心声线词。 | [static-rules.md](../sd-static-assets/references/static-rules.md)、[dynamic-rules.md](../sd-dynamic-video/references/dynamic-rules.md) |
 | R-LIGHT-001 | 空间光与叙事光 | T3/T4/T5使用基础漫射可读光；镜头叙事光影在故事板（T6/T6C）与动态风格层定义。T6B线稿仅作结构参考，写实/彩色首尾帧须使用T6C重绘全分辨率目标风格单帧。 | [design-9b.md](../sd-storyboard/references/design-9b.md) |
 | R-ASPECT-001 | 模板画幅 | T1/T3/T4固定`16:9`，T2固定`3:4`，T5/T6/T6B/T6C/T7/T8/T9跟随`project.aspect_ratio`；T5/T6/T6B内部3×3单格与外画幅同构，满幅无字。 | [静态模板](../sd-static-assets/references/templates.md) |

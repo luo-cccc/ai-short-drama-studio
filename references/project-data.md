@@ -16,7 +16,7 @@
 | `dialogues` | `LINE-` | `>= 0` | `beat_id`、`speaker_id`、`kind`（`dialogue` / `os` / `narration`）、`text`，可选`source_ref` |
 | `shots` | `SHOT-` | `>= 1` | 5–30秒制作片段，含`segments`、`design`、`audio`、`transitions`、`review`、`notes`及可选`overlays` |
 | `prompts` | `PROMPT-` | `>= 1` | `template`（`T1`–`T6C` / `T7`–`T9`）、`shot_id`、`duration`、`asset_ids`、`reference_bindings`、`text` |
-| `voices` | `VOICE-` | `1.1`可选 | 角色或旁白的声音身份参考，含`status`、`audition`、`master`、`references`及可选`audition_text` |
+| `voices` | `VOICE-` | `1.1`可选 | 每个角色（或旁白）唯一的单条声音身份参考，含`status`、`reference`及可选`audition_text` |
 
 所有实体均含全局唯一`id`（前缀+字母数字/下划线/连字符）与正整数`revision`。修改实体内容时递增`revision`，重命名或重排不更换`id`。
 
@@ -37,17 +37,17 @@
 - `segments.lines`含`dialogue_id`与`text`，可成对填写局部时间`start`与`end`（`segment.start <= start < segment.end`，`start < end <= shot.duration`，同镜内按顺序不回退）。跨切镜台词归属开始发声的`segment`。
 
 ### 3. 素材绑定与画幅
-- `reference_bindings`含`slot`与`asset_id`（声音绑定另含`audio_reference_id`）。静态提示词使用`@图片N`，动态提示词使用`@素材N`，正文使用的槽位集合须与`reference_bindings`完全一致，且每个槽位在正文有独立参考声明。
-- 绑定`CHAR-`、`SCENE-`、`PROP-`、`VOICE-`时，该ID须同时列入`prompt.asset_ids`；也可绑定静态`PROMPT-`（禁止绑定动态`PROMPT-`或跨分镜绑定其他镜头的`T6`/`T6B`故事板）。
+- `reference_bindings`含`slot`与`asset_id`。静态提示词使用`@图片N`，动态提示词使用`@素材N`，正文使用的槽位集合须与`reference_bindings`完全一致，且每个槽位在正文有独立参考声明。
+- 绑定`CHAR-`、`SCENE-`、`PROP-`、`VOICE-`时，该ID须同时列入`prompt.asset_ids`；也可绑定静态`PROMPT-`（禁止绑定动态`PROMPT-`或跨分镜绑定其他镜头的`T6`/`T6B`故事板；衍生静态资产须直接回绑零代母图，避免变体接变体串行垫图引发代际噪点）。
 - 参考声明与主体行中的资产类别、名称必须与绑定的实体一致。动态提示词的场景/故事板参考必须包含`禁止继承画面风格、光影、色彩`且不得正向继承这些属性；正向参考项与禁止继承项不得冲突。
 - 每条提示词末行须唯一声明`--ar 比例`：`T1`/`T3`/`T4`固定为`16:9`，`T2`固定为`3:4`，`T5`/`T6`/`T6B`/`T6C`/`T7`/`T8`/`T9`跟随`project.aspect_ratio`。
 - `T6`/`T6B`包含`Shot #`行时，须按序包含`Shot #1`至`Shot #9`，标定时间不回退、不超出分镜`duration`，引用的`物理镜头N`须存在于`shot.segments`。
 
-### 4. 角色声音参考（Schema 1.1）
-- `voices[].status`为`planned`时，`master`须为`null`、`references`须为空数组、`audition`不得为`approved`，且不得绑定到动态提示词槽位。
-- `status`为`ready`时须提供`master`（含本地相对路径`path`、64位小写十六进制`sha256`、`duration`、`transcript`）。
-- `references`记录按模型裁剪的投喂副本（`id`、`model_id`、`path`、`sha256`、`duration`、`source_start`、`source_end`、`transcript`），裁剪区间须在母版时长内且`|source_end - source_start - duration| <= 0.05`。
-- 动态提示词绑定`VOICE-`时须提供`audio_reference_profile`（`model_id`、`supports_voice_reference: true`、`max_files`、`max_file_duration`、`max_total_duration`、`formats`、`source`），副本`model_id`、文件数、时长与扩展名须符合配置。同一角色或旁白在同一提示词中只能绑定一个声音参考。
+### 4. 角色单条声音参考（Schema 1.1）
+- 每个角色（`character_id`）或旁白（`null`）在项目中最多保留**单条**`VOICE-`资产，不额外生成整集逐句配音资产。
+- `voices[].status`为`planned`时，`reference`须为`null`，且不得绑定到动态提示词槽位。
+- `status`为`ready`时须在`reference`提供单条参考音频对象（含目标模型`model_id`、本地相对路径`path`、64位小写十六进制`sha256`、`duration`、`transcript`）。
+- 动态提示词绑定`VOICE-`时须提供`audio_reference_profile`（`model_id`、`supports_voice_reference: true`、`max_files`、`max_file_duration`、`max_total_duration`、`formats`、`source`），单条`reference`的`model_id`、文件数、时长与扩展名须符合配置。同一角色或旁白在同一提示词中只能绑定一个声音参考。
 
 ## 依赖快照（`depends_on`）
 

@@ -644,10 +644,6 @@
         "asset_id": {
           "type": "string",
           "pattern": "^(?:CHAR|SCENE|PROP|PROMPT|VOICE)-[A-Za-z0-9][A-Za-z0-9_-]*$"
-        },
-        "audio_reference_id": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
         }
       },
       "required": [
@@ -787,30 +783,16 @@
       ],
       "additionalProperties": false
     },
-    "voice_master": {
+    "voice_reference": {
       "type": ["object", "null"],
       "properties": {
-        "path": {"type": "string", "pattern": "\\S"},
-        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "duration": {"type": "number", "exclusiveMinimum": 0},
-        "transcript": {"type": "string", "pattern": "\\S"}
-      },
-      "required": ["path", "sha256", "duration", "transcript"],
-      "additionalProperties": false
-    },
-    "voice_reference": {
-      "type": "object",
-      "properties": {
-        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"},
         "model_id": {"type": "string", "pattern": "\\S"},
         "path": {"type": "string", "pattern": "\\S"},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "duration": {"type": "number", "exclusiveMinimum": 0},
-        "source_start": {"type": "number", "minimum": 0},
-        "source_end": {"type": "number", "exclusiveMinimum": 0},
         "transcript": {"type": "string", "pattern": "\\S"}
       },
-      "required": ["id", "model_id", "path", "sha256", "duration", "source_start", "source_end", "transcript"],
+      "required": ["model_id", "path", "sha256", "duration", "transcript"],
       "additionalProperties": false
     },
     "voice": {
@@ -824,13 +806,11 @@
         "language": {"type": "string", "pattern": "\\S"},
         "source": {"type": "string", "pattern": "\\S"},
         "status": {"enum": ["planned", "ready"]},
-        "audition": {"enum": ["unreviewed", "approved", "needs_revision"]},
         "audition_text": {"type": "string", "pattern": "\\S"},
-        "master": {"$ref": "#/$defs/voice_master"},
-        "references": {"type": "array", "items": {"$ref": "#/$defs/voice_reference"}},
+        "reference": {"$ref": "#/$defs/voice_reference"},
         "notes": {"type": "string"}
       },
-      "required": ["id", "revision", "name", "character_id", "description", "language", "source", "status", "audition", "master", "references", "notes"],
+      "required": ["id", "revision", "name", "character_id", "description", "language", "source", "status", "reference", "notes"],
       "additionalProperties": false
     },
     "audio_reference_profile": {

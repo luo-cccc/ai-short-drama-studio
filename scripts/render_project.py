@@ -155,9 +155,7 @@ def prompt_block(prompt):
 
 
 def voice_state(voice):
-    status = {"planned": "待制作；不可投喂", "ready": "已有音频"}[voice["status"]]
-    audition = {"unreviewed": "未试听", "approved": "试听通过", "needs_revision": "需修订"}[voice["audition"]]
-    return f"{status}；{audition}"
+    return {"planned": "待制作；不可投喂", "ready": "已有音频"}[voice["status"]]
 
 
 def voice_owner(voice, index):
@@ -167,27 +165,20 @@ def voice_owner(voice, index):
 def voice_card(voice, index):
     """声音转写只作资产资料展示，不写入正式对白或提示词代码块。"""
     lines = [f"### {voice['id']} · {prose(voice['name'])}\n",
-             table(["角色", "版本", "语言", "制作与试听状态"],
+             table(["角色", "版本", "语言", "状态"],
                    [[voice_owner(voice, index), voice["revision"], voice["language"], voice_state(voice)]]),
              f"声音设计：{prose(voice['description'])}\n",
              f"来源：{prose(voice['source'])}"]
     if voice["status"] == "planned":
-        lines.append("试听制作说明：按上述声音设计与语言制作单人常态说话样片，试听定版后登记母版和模型投喂副本；当前不分配上传槽位。")
+        lines.append("试听制作说明：每个发声角色仅需制作单条常态干声参考样片（无需额外生成整集配音音频），定版后登记 reference 音频；当前不分配上传槽位。")
     if voice.get("audition_text"):
-        lines.append(f"试听文案（用于制作参考音频，不是剧情对白）：{prose(voice['audition_text'])}")
-    master = voice["master"]
-    if master is not None:
-        lines.extend(["\n母版资料（转写仅用于核对参考内容，不是本镜对白）：\n",
-                      table(["文件", "时长", "SHA-256", "参考转写"],
-                            [[master["path"], f"{master['duration']:.3f}s", master["sha256"], master["transcript"]]])])
-    if voice["references"]:
-        lines.extend(["\n模型投喂副本：\n",
-                      table(["副本 ID", "目标模型", "文件", "时长", "母版取用区间", "SHA-256", "参考转写"],
-                            [[reference["id"], reference["model_id"], reference["path"],
-                              f"{reference['duration']:.3f}s",
-                              f"{reference['source_start']:.3f}–{reference['source_end']:.3f}s",
-                              reference["sha256"], reference["transcript"]]
-                             for reference in voice["references"]])])
+        lines.append(f"试听文案（用于制作单条参考音频，不是剧情对白）：{prose(voice['audition_text'])}")
+    reference = voice["reference"]
+    if reference is not None:
+        lines.extend(["\n单条模型参考音频（转写仅用于核对参考内容，不是本镜对白）：\n",
+                      table(["目标模型", "文件", "时长", "SHA-256", "参考转写"],
+                            [[reference["model_id"], reference["path"], f"{reference['duration']:.3f}s",
+                              reference["sha256"], reference["transcript"]]])])
     if voice["notes"]:
         lines.append(f"备注：{prose(voice['notes'])}")
     return "\n\n".join(lines)
@@ -354,14 +345,12 @@ def render_documents(data):
             voice_rows = []
             for binding in voice_bindings:
                 voice = index[binding["asset_id"]]
-                reference = next(item for item in voice["references"]
-                                 if item["id"] == binding["audio_reference_id"])
+                reference = voice["reference"]
                 voice_rows.append([binding["slot"], voice["id"], voice_owner(voice, index), reference["model_id"],
-                                   reference["id"], reference["path"], f"{reference['duration']:.3f}s",
-                                   f"{reference['source_start']:.3f}–{reference['source_end']:.3f}s", reference["sha256"]])
+                                   reference["path"], f"{reference['duration']:.3f}s", reference["sha256"]])
             lines.extend(["\n### 本镜音频上传槽\n",
-                          table(["素材位", "声音 ID", "角色", "目标模型", "副本 ID", "音频文件", "时长", "母版取用区间", "SHA-256"], voice_rows),
-                          "按表逐一将文件绑定对应角色；样片中的文字、情绪和背景声不作为本镜生成内容。返片核对角色归属、正式台词、样片串读及跨镜声音一致性。"])
+                          table(["素材位", "声音 ID", "角色", "目标模型", "音频文件", "时长", "SHA-256"], voice_rows),
+                          "按表逐一将单条角色声音参考文件绑定对应角色；样片中的文字、情绪和背景声不作为本镜生成内容。返片核对角色归属、正式台词、样片串读及跨镜声音一致性。"])
         elif voices:
             lines.append("\n本镜没有已绑定的声音参考文件；待制作或未绑定声音不占上传槽位。")
         lines.extend([

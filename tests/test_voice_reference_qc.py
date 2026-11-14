@@ -26,17 +26,13 @@ def voice_project():
         "id": "VOICE-WANQING", "revision": 1, "name": "晚晴常态声音",
         "character_id": "CHAR-WANQING", "description": "清亮女中音，咬字清楚。",
         "language": "zh-CN", "source": "单元测试数据，不作为真实声音资产。",
-        "status": "ready", "audition": "approved",
-        "master": {
-            "path": "voices/master.wav", "sha256": "0" * 64,
-            "duration": 1.0, "transcript": "今天风很轻。",
-        },
-        "references": [{
-            "id": "REF-WANQING-VIDEO", "model_id": "test-video-model",
+        "status": "ready",
+        "reference": {
+            "model_id": "test-video-model",
             "path": "voices/reference.wav", "sha256": "0" * 64,
-            "duration": 1.0, "source_start": 0.0, "source_end": 1.0,
+            "duration": 1.0,
             "transcript": "今天风很轻。",
-        }],
+        },
         "notes": "",
     }
     data["voices"] = [voice]
@@ -45,7 +41,6 @@ def voice_project():
     prompt["text"] = prompt["text"].replace("角色晚晴：参考@素材1", "角色晚晴：声音身份参考@素材4，参考@素材1")
     prompt["reference_bindings"].append({
         "slot": "@素材4", "asset_id": voice["id"],
-        "audio_reference_id": "REF-WANQING-VIDEO",
     })
     prompt["asset_ids"].append(voice["id"])
     prompt["audio_reference_profile"] = {
@@ -63,15 +58,15 @@ def project_errors(data, **kwargs):
 
 def write_fixture_media(data, directory):
     """只为文件验证生成一秒静音WAV，不交付为声音样片。"""
-    for record in [data["voices"][0]["master"], *data["voices"][0]["references"]]:
-        target = Path(directory) / record["path"]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with wave.open(str(target), "wb") as output:
-            output.setnchannels(1)
-            output.setsampwidth(2)
-            output.setframerate(8000)
-            output.writeframes(b"\0\0" * 8000)
-        record["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+    record = data["voices"][0]["reference"]
+    target = Path(directory) / record["path"]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(target), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(8000)
+        output.writeframes(b"\0\0" * 8000)
+    record["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
     return snapshot_dependencies(data)
 
 
@@ -130,7 +125,7 @@ class VoiceReferenceProjectTests(unittest.TestCase):
     def test_media_fingerprint_change_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
             data = write_fixture_media(voice_project(), directory)
-            target = Path(directory) / data["voices"][0]["references"][0]["path"]
+            target = Path(directory) / data["voices"][0]["reference"]["path"]
             with target.open("ab") as output:
                 output.write(b"changed")
             errors = project_errors(data, media_root=directory)
@@ -146,7 +141,7 @@ class VoiceReferenceProjectTests(unittest.TestCase):
                 status = main([str(project_path), "--media-root", directory, "--format", "json"])
             self.assertEqual(status, 0, buffer.getvalue())
             self.assertTrue(json.loads(buffer.getvalue())["ok"])
-            (Path(directory) / data["voices"][0]["master"]["path"]).unlink()
+            (Path(directory) / data["voices"][0]["reference"]["path"]).unlink()
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(main([str(project_path), "--media-root", directory]), 1)
 

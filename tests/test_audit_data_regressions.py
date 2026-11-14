@@ -136,15 +136,13 @@ class AuditDataRegressionTests(unittest.TestCase):
     def test_negative_voice_mention_does_not_satisfy_owner_declaration(self):
         data = load_project(ROOT / "examples/voice-reference/project.json")
         voice = data["voices"][0]
-        voice.update(status="ready", audition="approved")
-        voice["master"] = {"path": "master.wav", "sha256": "0" * 64,
-                           "duration": 1.0, "transcript": "试听声音。"}
-        voice["references"] = [{"id": "video-a", "model_id": "test-video-a", "path": "ref.wav",
-                                "sha256": "0" * 64, "duration": 1.0,
-                                "source_start": 0.0, "source_end": 1.0, "transcript": "试听声音。"}]
+        voice.update(status="ready")
+        voice["reference"] = {"model_id": "test-video-a", "path": "ref.wav",
+                              "sha256": "0" * 64, "duration": 1.0,
+                              "transcript": "试听声音。"}
         prompt = next(item for item in data["prompts"] if item["id"] == "PROMPT-VIDEO-001")
         prompt["asset_ids"].append(voice["id"])
-        prompt["reference_bindings"].append({"slot": "@素材4", "asset_id": voice["id"], "audio_reference_id": "video-a"})
+        prompt["reference_bindings"].append({"slot": "@素材4", "asset_id": voice["id"]})
         prompt["audio_reference_profile"] = {"model_id": "test-video-a", "supports_voice_reference": True,
                                             "max_files": 1, "max_file_duration": 1.0, "max_total_duration": 1.0,
                                             "formats": ["wav"], "source": "测试配置"}
@@ -229,6 +227,48 @@ class AuditDataRegressionTests(unittest.TestCase):
         static_errors, _ = validate_project(snapshot_dependencies(wrong_static))
         self.assertTrue(any("绑定了场景参考图 PROMPT-SPACE-GATE（T5），但参考声明主语不是场景" in e for e in static_errors), static_errors)
         self.assertTrue(any("道具铜钥匙的视觉参考槽 @素材1 指向了非本道具资产 CHAR-WANQING" in e for e in static_errors), static_errors)
+
+    def test_serial_variant_chaining_and_reference_noise_terms_warn(self):
+        from scripts.qc_check import check
+        chained = deepcopy(self.data)
+        chained["prompts"].extend([
+            {
+                "id": "PROMPT-CHAR-V1",
+                "revision": 1,
+                "template": "T1",
+                "shot_id": None,
+                "duration": None,
+                "asset_ids": ["CHAR-WANQING"],
+                "reference_bindings": [{"slot": "@图片1", "asset_id": "CHAR-WANQING"}],
+                "text": (
+                    "@图片1 参考角色晚晴面部母图的五官骨相。禁止继承原图的服装款式，背景，动作，表情。\n"
+                    "生成一张角色完整视觉设定参考图，晚晴，窄脸，平直眉，深棕瞳孔，黑发低束，夜行黑衣。\n"
+                    "--ar 16:9"
+                ),
+                "depends_on": [],
+            },
+            {
+                "id": "PROMPT-CHAR-V2",
+                "revision": 1,
+                "template": "T1",
+                "shot_id": None,
+                "duration": None,
+                "asset_ids": ["CHAR-WANQING"],
+                "reference_bindings": [{"slot": "@图片1", "asset_id": "PROMPT-CHAR-V1"}],
+                "text": (
+                    "@图片1 参考角色晚晴面部母图的五官骨相。禁止继承原图的服装款式，背景，动作，表情。\n"
+                    "生成一张角色完整视觉设定参考图，晚晴，窄脸，平直眉，深棕瞳孔，黑发低束，战损黑衣，微距毛孔与胶片颗粒。\n"
+                    "--ar 16:9"
+                ),
+                "depends_on": [],
+            },
+        ])
+        errors, warnings = validate_project(snapshot_dependencies(chained))
+        self.assertEqual([], errors)
+        self.assertTrue(any("连续串行垫图会导致代际噪点累积" in w for w in warnings), warnings)
+
+        _, qc_warns = check(chained["prompts"][-1]["text"], mode="static", duration=None, template="T1")
+        self.assertTrue(any("高频纹理/锐化词" in w for w in qc_warns), qc_warns)
 
 
 if __name__ == "__main__":

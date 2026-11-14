@@ -20,7 +20,7 @@ def planned_voice():
         "id": "VOICE-WANQING", "revision": 1, "name": "晚晴常态声音",
         "character_id": "CHAR-WANQING", "description": "清亮偏实声，字头清楚，句尾自然收住。",
         "language": "普通话", "source": "测试中的待制作声音设计", "status": "planned",
-        "audition": "unreviewed", "master": None, "references": [], "notes": "",
+        "reference": None, "notes": "",
     }
 
 
@@ -44,19 +44,14 @@ class VoiceReferenceExportTests(unittest.TestCase):
 
     def ready_data(self, root):
         voice = planned_voice()
-        master_hash = write_test_wave(root / "master.wav", 2)
         reference_hash = write_test_wave(root / "reference.wav", 1)
         transcript = "这段样片文字只用于资产核对。"
-        voice.update(status="ready", audition="approved", source="临时合成 WAV 测试夹具")
-        voice["master"] = {
-            "path": "master.wav", "sha256": master_hash, "duration": 2.0,
+        voice.update(status="ready", source="临时合成 WAV 测试夹具")
+        voice["reference"] = {
+            "model_id": "test-video-audio-v1", "path": "reference.wav",
+            "sha256": reference_hash, "duration": 1.0,
             "transcript": transcript,
         }
-        voice["references"] = [{
-            "id": "video-reference", "model_id": "test-video-audio-v1", "path": "reference.wav",
-            "sha256": reference_hash, "duration": 1.0, "source_start": 0.0, "source_end": 1.0,
-            "transcript": transcript,
-        }]
         self.data["schema_version"] = "1.1"
         self.data["voices"] = [voice]
         prompt = next(item for item in self.data["prompts"] if item["id"] == "PROMPT-VIDEO-001")
@@ -67,7 +62,7 @@ class VoiceReferenceExportTests(unittest.TestCase):
         }
         prompt["asset_ids"].append(voice["id"])
         prompt["reference_bindings"].append({
-            "slot": "@素材4", "asset_id": voice["id"], "audio_reference_id": "video-reference",
+            "slot": "@素材4", "asset_id": voice["id"],
         })
         prompt["text"] = (
             "@素材4 参考角色晚晴的声音身份、口音与咬字。禁止继承样片台词、情绪、背景声。\n"
@@ -108,7 +103,7 @@ class VoiceReferenceExportTests(unittest.TestCase):
             self.assertIn("| @素材4 | VOICE-WANQING | 晚晴 | test-video-audio-v1 |", shot)
             self.assertIn("reference.wav", shot)
             self.assertIn("| LINE-LOCK | 1 | 0.0–5.0s | 2.5–4.0s |", shot)
-            transcript = data["voices"][0]["master"]["transcript"]
+            transcript = data["voices"][0]["reference"]["transcript"]
             self.assertIn(transcript, documents["project.md"])
             blocks = [block for document in documents.values()
                       for block in extract_prompt_blocks(document)[0]]

@@ -34,7 +34,7 @@
    - 按5–30秒承载量划分制作片段（`SHOT-`）及内部物理镜头（`segments`），完成八岗位设计后编写提示词（`PROMPT-`）。
 4. **文字与声音**：
    - 动态提示词默认无字幕。画内文字与后期叠字写入`shots.overlays`（导出至分镜文档第五章）或在交接文档单列。
-   - 使用视频模型声音参考时，按[声音参考资产](voice-reference-assets.md)登记`VOICE-`资产、母版与模型副本；样片转写与`audition_text`不进入`dialogues`或镜头台词引号。
+   - 使用视频模型声音参考时，按[声音参考资产](voice-reference-assets.md)为每个发声角色仅登记**单条**`VOICE-`参考音频（不额外生成整集配音资产）；样片转写与`audition_text`不进入`dialogues`或镜头台词引号。
 
 ## 回改同步顺序
 

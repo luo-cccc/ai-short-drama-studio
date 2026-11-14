@@ -19,7 +19,7 @@ python -B -X utf8 scripts/qc_check.py prompt.txt --mode dynamic --duration 10
 | `--source` | （仅项目JSON）与源剧本或`preproduction.md`对账台词文本、说话者、类型及`BEAT->SHOT`/`LINE`映射 |
 | `--previous` | （仅项目JSON）与旧版`project.json`比较，检查实体删改、版本回退及修改未增版 |
 | `--shared-assets` | （仅项目JSON）校验当前项目的角色、场景、道具、声音及全局静态提示词是否与共享资产库一致 |
-| `--media-root` | （仅项目JSON）检查`voices`登记的本地音频文件存在性、SHA-256指纹及WAV实测时长 |
+| `--media-root` | （仅项目JSON）检查`voices[].reference`登记的本地单条参考音频存在性、SHA-256指纹及WAV实测时长 |
 | `--format text\|json` | 输出可读文本或`{"ok", "checked", "skipped", "results"}` JSON结构 |
 
 - **Markdown扫描规则**：仅扫描`text`/`txt`/`prompt`/`static`/`dynamic`代码块及带`<!-- prompt id=... template=... duration=... -->`元数据的代码块；自动跳过`json`/`python`/`wan`等代码块及`SKILL.md`。

@@ -380,6 +380,11 @@ def check(text: str, mode: str = "dynamic", duration: float | None = 15, *, temp
     ordinary_body = re.sub(r"(?m)^\s*@(?:素材|图片)\d+\s+参考[^\n]*", "", body)
     if sum(ordinary_body.count(word) for word in ["不要", "禁止", "避免", "切勿"]) >= 3:
         warns.append("正文负向约束堆叠，请以正向视觉事实表达")
+    if mode == "static" and references and template != "T6B":
+        for noise_term in re.findall(r"胶片颗粒|颗粒感|粗粝颗粒|微距毛孔|极致锐利|极致锐化|高频细节|噪点质感", ordinary_body):
+            warns.append(
+                f"带参考图的静态提示词含高频纹理/锐化词「{noise_term}」，连续垫图易放大代际噪点与伪影，建议改为平滑纯净的材质与光影描述"
+            )
     for nonstd, std in SPEED_NONSTD_HINT.items():
         if re.search(rf"语速[^，。\n]{{0,5}}{re.escape(nonstd)}", body):
             warns.append(f"非标准语速词「{nonstd}」，建议「{std}」")
@@ -913,7 +918,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--previous", help="历史project.json，用于修改与版本追溯检查")
     parser.add_argument("--source", help="源剧本或前期交接Markdown，用于校验源稿与JSON台词及映射一致")
     parser.add_argument("--shared-assets", dest="shared_assets", help="跨集共享资产JSON，用于校验公共角色/场景/道具与全局提示词同步")
-    parser.add_argument("--media-root", help="声音素材根目录；启用本地母版与投喂副本的存在、指纹及可读取时长检查")
+    parser.add_argument("--media-root", help="声音素材根目录；启用本地单条角色参考音频的存在、指纹及可读取时长检查")
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
     if args.duration is not None and (not Decimal(str(args.duration)).is_finite() or not 5 <= args.duration <= 30):

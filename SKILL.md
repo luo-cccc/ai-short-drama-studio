@@ -19,7 +19,7 @@ metadata:
 | 资产节拍整理、镜头与声音设计 | [sd-storyboard/SKILL.md](sd-storyboard/SKILL.md) | 八岗位分镜设计与结构化制作数据 |
 | 角色、道具、场景、故事板及单帧关键帧提示词 | [sd-static-assets/SKILL.md](sd-static-assets/SKILL.md) | T1–T6/T6B/T6C静态提示词 |
 | 视频提示词、配音与音效脚本 | [sd-dynamic-video/SKILL.md](sd-dynamic-video/SKILL.md) | T7–T9动态提示词与声音脚本 |
-| 角色声音设计与视频音色参考 | [references/voice-reference-assets.md](references/voice-reference-assets.md) | 声音卡、试听文案、母版与模型副本、音频槽绑定 |
+| 角色声音设计与视频音色参考 | [references/voice-reference-assets.md](references/voice-reference-assets.md) | 角色单条声音卡、试听文案、参考音频与音频槽绑定 |
 
 ## 执行约定
 

@@ -196,7 +196,7 @@
         "design_id": "9B-SHOT-001",
         "status": "unreviewed"
       },
-      "notes": "时长为文字估算，未朗读、未生成或实拍。局部0.3–0.6秒与2.0–5.0秒为保守证据可读窗口；2.5–4.0秒对白与后一个窗口重叠。整场总轴及重叠依据见preproduction.md的整场预算与分段；预算方法见../../references/scene-timing.md。"
+      "notes": "局部0.3–0.6秒与2.0–5.0秒为新锁证据可读窗口；2.5–4.0秒对白与后一窗口并行。"
     },
     {
       "id": "SHOT-002",
@@ -326,7 +326,7 @@
         "design_id": "9B-SHOT-002",
         "status": "unreviewed"
       },
-      "notes": "时长为文字估算，未朗读、未生成或实拍。3.2–5.0秒才计入钥匙细节的有效阅读窗口，1.6–2.2秒抽出和后续尚未稳定的取景不提前计入；窗口与2.9–4.7秒对白部分重叠。整场总轴及逐项预算见preproduction.md的整场预算与分段；预算方法见../../references/scene-timing.md。"
+      "notes": "局部3.2–5.0秒为掌心钥匙有效阅读窗口，与2.9–4.7秒对白部分并行。"
     }
   ],
   "prompts": [
@@ -399,7 +399,7 @@
         {
           "id": "SHOT-001",
           "revision": 3,
-          "fingerprint": "f01384986a171219586d4fc3df16a1cee9d7042e98128ccc841464784e546799"
+          "fingerprint": "9cbb740a0978ba8623358d26e1e7ed35099399f02af14dc7de08052f74efeb81"
         }
       ]
     },
@@ -452,7 +452,7 @@
         {
           "id": "SHOT-001",
           "revision": 3,
-          "fingerprint": "f01384986a171219586d4fc3df16a1cee9d7042e98128ccc841464784e546799"
+          "fingerprint": "9cbb740a0978ba8623358d26e1e7ed35099399f02af14dc7de08052f74efeb81"
         }
       ]
     },
@@ -506,7 +506,7 @@
         {
           "id": "SHOT-002",
           "revision": 3,
-          "fingerprint": "e3f415690829dcd5b341025716f5ebcca501a4786dec3095ffe6cb9a479b38f9"
+          "fingerprint": "1d466aa00adc89e7637c13574f0358e665a073adacec4ae98d26e57660d97ca6"
         }
       ]
     },
@@ -569,7 +569,7 @@
         {
           "id": "SHOT-002",
           "revision": 3,
-          "fingerprint": "e3f415690829dcd5b341025716f5ebcca501a4786dec3095ffe6cb9a479b38f9"
+          "fingerprint": "1d466aa00adc89e7637c13574f0358e665a073adacec4ae98d26e57660d97ca6"
         }
       ]
     }
@@ -582,12 +582,10 @@
       "character_id": "CHAR-WANQING",
       "description": "青年女性，中音区，清亮偏实声；普通话，字头清楚，句尾自然收住。常态表达克制，保留自然呼吸。",
       "language": "zh-CN",
-      "source": "待用声音设计工具制作候选并试听；当前仅为制作计划，未生成任何音频。",
+      "source": "待用声音设计工具制作单条常态干声样片；当前仅为制作计划，未生成音频。",
       "status": "planned",
-      "audition": "unreviewed",
-      "master": null,
-      "references": [],
-      "notes": "待选定母版并核对具体视频模型后，再制作投喂副本和分配声音素材槽。",
+      "reference": null,
+      "notes": "只需准备单条角色声音给视频模型做音色参考，无需额外生成整集声音资产；待定版后登记 reference 并分配声音素材槽。",
       "audition_text": "今天风很轻，沿着这条路走，前面就能看见院子。你要现在出发，还是再等一会儿？"
     }
   ]

@@ -22,18 +22,13 @@ def reference_project():
         "id": "VOICE-WANQING", "revision": 1, "name": "晚晴常态声音",
         "character_id": "CHAR-WANQING", "description": "清亮偏实声，字头清楚。",
         "language": "zh-CN", "source": "测试夹具，不代表真实人物音频",
-        "status": "ready", "audition": "approved", "notes": "",
-        "master": {"path": "master.wav", "sha256": "0" * 64,
-                   "duration": 2.0, "transcript": "今天风很轻，明天再出发。"},
-        "references": [{"id": "video-a", "model_id": "test-video-a",
-                        "path": "reference.wav", "sha256": "0" * 64,
-                        "duration": 1.0, "source_start": 0.0, "source_end": 1.0,
-                        "transcript": "今天风很轻。"}],
+        "status": "ready", "notes": "",
+        "reference": {"model_id": "test-video-a", "path": "reference.wav", "sha256": "0" * 64,
+                      "duration": 1.0, "transcript": "今天风很轻。"},
     }]
     prompt = next(p for p in data["prompts"] if p["id"] == "PROMPT-VIDEO-001")
     prompt["asset_ids"].append("VOICE-WANQING")
-    prompt["reference_bindings"].append({"slot": "@素材4", "asset_id": "VOICE-WANQING",
-                                         "audio_reference_id": "video-a"})
+    prompt["reference_bindings"].append({"slot": "@素材4", "asset_id": "VOICE-WANQING"})
     prompt["text"] = "@素材4 参考角色晚晴的声音身份、音色与咬字。禁止继承样片台词、情绪和背景声。\n" + prompt["text"]
     prompt["audio_reference_profile"] = {
         "model_id": "test-video-a", "supports_voice_reference": True,
@@ -65,8 +60,7 @@ class VoiceAssetTests(unittest.TestCase):
         self.assertTrue(any("待制作" in item for item in warnings))
         voice = data["voices"][0]
         self.assertTrue(voice["audition_text"])
-        self.assertIsNone(voice["master"])
-        self.assertFalse(voice["references"])
+        self.assertIsNone(voice["reference"])
         self.assertFalse(any(binding["asset_id"].startswith("VOICE-")
                              for prompt in data["prompts"] for binding in prompt["reference_bindings"]))
 
@@ -75,7 +69,7 @@ class VoiceAssetTests(unittest.TestCase):
         self.assertTrue(any("1.1" in error for error in validate_shape(self.data)))
 
     def test_bad_voice_shape_cannot_reach_relationship_checks(self):
-        self.voice["master"]["sha256"] = "not-a-fingerprint"
+        self.voice["reference"]["sha256"] = "not-a-fingerprint"
         errors, _ = validate_project(self.data)
         self.assertTrue(any("sha256" in error for error in errors))
 
@@ -83,7 +77,7 @@ class VoiceAssetTests(unittest.TestCase):
         data = load_project(ROOT / "examples/demo/project.json")
         data["schema_version"] = "1.1"
         planned = deepcopy(self.voice)
-        planned.update(status="planned", audition="unreviewed", master=None, references=[])
+        planned.update(status="planned", reference=None)
         data["voices"] = [planned]
         errors, warnings = validate_project(data)
         self.assertFalse(errors)
@@ -92,15 +86,17 @@ class VoiceAssetTests(unittest.TestCase):
     def test_planned_asset_cannot_claim_files_or_bindings(self):
         self.voice["status"] = "planned"
         self.assertIn("planned", self.errors())
-        self.voice.update(master=None, references=[], audition="unreviewed")
+        self.voice.update(reference=None)
         self.assertIn("尚未 ready", self.errors())
 
-    def test_ready_requires_master_and_reference_id(self):
-        self.voice["master"] = None
-        self.assertIn("必须登记母版", self.errors())
-        self.voice["master"] = reference_project()["voices"][0]["master"]
-        self.prompt["reference_bindings"][-1].pop("audio_reference_id")
-        self.assertIn("audio_reference_id", self.errors())
+    def test_ready_requires_single_reference_and_only_one_voice_per_character(self):
+        self.voice["reference"] = None
+        self.assertIn("必须登记单条参考音频", self.errors())
+        self.voice["reference"] = reference_project()["voices"][0]["reference"]
+        duplicate_char_voice = deepcopy(self.voice)
+        duplicate_char_voice["id"] = "VOICE-WANQING-EXTRA"
+        self.data["voices"].append(duplicate_char_voice)
+        self.assertIn("只能保留单条声音参考资产", self.errors())
 
     def test_role_and_reference_declaration_must_match(self):
         self.voice["character_id"] = "CHAR-MISSING"
@@ -134,8 +130,7 @@ class VoiceAssetTests(unittest.TestCase):
         voice.update(id="VOICE-LINZHOU", name="林舟声音", character_id=character["id"])
         self.data["voices"].append(voice)
         self.prompt["asset_ids"].extend([voice["id"], character["id"]])
-        self.prompt["reference_bindings"].append({"slot": "@素材5", "asset_id": voice["id"],
-                                                 "audio_reference_id": "video-a"})
+        self.prompt["reference_bindings"].append({"slot": "@素材5", "asset_id": voice["id"]})
         self.prompt["audio_reference_profile"].update(max_files=2, max_total_duration=2.0)
         self.prompt["text"] = "@素材5 参考角色林舟的声音身份与音色。\n" + self.prompt["text"]
         self.prompt["text"] = self.prompt["text"].replace(
@@ -152,20 +147,6 @@ class VoiceAssetTests(unittest.TestCase):
         self.prompt["text"] = self.prompt["text"].replace(
             "角色晚晴：参考@素材1", "角色晚晴：声音身份参考@素材1，参考@素材1")
         self.assertIn("未绑定声音资产", self.errors())
-
-    def test_visual_binding_cannot_select_audio_reference(self):
-        self.prompt["reference_bindings"][0]["audio_reference_id"] = "video-a"
-        self.assertIn("只有声音绑定", self.errors())
-
-    def test_reference_crop_duration_and_unique_ids_are_checked(self):
-        reference = self.voice["references"][0]
-        reference["source_end"] = 2.1
-        self.assertIn("超出母版", self.errors())
-        reference["source_end"] = 1.5
-        self.assertIn("副本时长与母版裁剪区间不一致", self.errors())
-        reference["source_end"] = 1.0
-        self.voice["references"].append(deepcopy(reference))
-        self.assertIn("投喂副本 id 重复", self.errors())
 
     def test_platform_model_and_support_must_match(self):
         profile = self.prompt["audio_reference_profile"]
@@ -216,35 +197,31 @@ class VoiceAssetTests(unittest.TestCase):
         self.assertFalse(validate_project(imported)[0])
 
     def test_remote_audio_path_is_not_a_local_file(self):
-        self.voice["master"]["path"] = "https://example.invalid/master.wav"
+        self.voice["reference"]["path"] = "https://example.invalid/reference.wav"
         self.assertIn("不能使用远程 URL", self.errors())
 
     def test_media_duration_and_truncated_wav_are_checked(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for record in [self.voice["master"], *self.voice["references"]]:
-                path = root / record["path"]
-                with wave.open(str(path), "wb") as audio:
-                    audio.setnchannels(1)
-                    audio.setsampwidth(2)
-                    audio.setframerate(8000)
-                    audio.writeframes(b"\0\0" * int(8000 * record["duration"]))
-                record["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+            record = self.voice["reference"]
+            path = root / record["path"]
+            with wave.open(str(path), "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(8000)
+                audio.writeframes(b"\0\0" * int(8000 * record["duration"]))
+            record["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
             self.assertEqual(([], []), validate_voice_media(self.data, root))
-            record = self.voice["references"][0]
             record["duration"] = 0.5
             self.assertTrue(any("实测时长" in error for error in validate_voice_media(self.data, root)[0]))
             record["duration"] = 1.0
-            path = root / record["path"]
             path.write_bytes(path.read_bytes()[:-20])
             record["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
             self.assertTrue(any("截断" in error for error in validate_voice_media(self.data, root)[0]))
-            master = self.voice["master"]
-            path = root / master["path"]
             payload = bytearray(path.read_bytes())
             payload[24:28] = b"\0" * 4
             path.write_bytes(payload)
-            master["sha256"] = hashlib.sha256(payload).hexdigest()
+            record["sha256"] = hashlib.sha256(payload).hexdigest()
             self.assertTrue(any("采样率" in error for error in validate_voice_media(self.data, root)[0]))
 
 
